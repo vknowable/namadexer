@@ -1,5 +1,5 @@
 use axum::{routing::get, Router};
-
+use std::str::FromStr;
 #[cfg(feature = "prometheus")]
 use axum_prometheus::{PrometheusMetricLayerBuilder, AXUM_HTTP_REQUESTS_DURATION_SECONDS};
 use futures_util::{Future, TryFutureExt};
@@ -7,12 +7,17 @@ use futures_util::{Future, TryFutureExt};
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder};
 use std::{collections::HashMap, net::SocketAddr};
 use tracing::{info, instrument};
+use tendermint_rpc::{HttpClient, Url};
 
 use crate::config::ServerConfig;
 use crate::database::Database;
 use crate::error::Error;
 use crate::utils::load_checksums;
 
+pub mod status;
+pub use status::{ChainStatus, StakingInfo};
+pub mod validators;
+pub use validators::ValidatorInfo;
 pub mod blocks;
 pub mod tx;
 pub use blocks::BlockInfo;
@@ -27,7 +32,8 @@ use self::endpoints::{
     account::get_account_updates,
     block::{get_block_by_hash, get_block_by_height, get_last_block},
     transaction::{get_shielded_tx, get_tx_by_hash, get_vote_proposal},
-    validator::get_validator_uptime,
+    validator::{get_validator_uptime, get_validator_info, get_validator_set},
+    status::get_status,
 };
 
 pub const HTTP_DURATION_SECONDS_BUCKETS: &[f64; 11] = &[
@@ -38,6 +44,7 @@ pub const HTTP_DURATION_SECONDS_BUCKETS: &[f64; 11] = &[
 pub struct ServerState {
     db: Database,
     checksums_map: HashMap<String, String>,
+    http_client: HttpClient,
 }
 
 fn server_routes(state: ServerState) -> Router<()> {
@@ -53,6 +60,9 @@ fn server_routes(state: ServerState) -> Router<()> {
             "/validator/:validator_address/uptime",
             get(get_validator_uptime),
         )
+        .route("/validator/:validator_address/info", get(get_validator_info))
+        .route("/validator/set", get(get_validator_set))
+        .route("/chain/status", get(get_status))
         .with_state(state)
 }
 
@@ -91,7 +101,10 @@ pub fn create_server(
         .with_metrics_from_fn(|| prometheus_handle)
         .build_pair();
 
-    let routes = server_routes(ServerState { db, checksums_map });
+    let url = Url::from_str(&config.tendermint_addr)?;
+    let http_client = HttpClient::new(url)?;
+
+    let routes = server_routes(ServerState { db, checksums_map, http_client });
 
     #[cfg(feature = "prometheus")]
     let routes = routes

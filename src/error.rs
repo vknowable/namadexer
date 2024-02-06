@@ -6,6 +6,7 @@ use std::error::Error as StdError;
 use std::num::ParseIntError;
 use thiserror::Error as ThisError;
 use tokio::task::JoinError;
+use namada_sdk::error::Error as NamError;
 
 use config::ConfigError;
 use opentelemetry_api::metrics::MetricsError;
@@ -20,10 +21,14 @@ pub enum Error {
     InvalidBlockData,
     #[error("Invalid Transaction data")]
     InvalidTxData,
+    #[error("Invalid Validator address")]
+    InvalidValidatorAddress,
     #[error("Tendermint error: {0}")]
     TendermintError(#[from] TError),
     #[error("Tendermint rpc_error: {0}")]
     TendermintRpcError(#[from] TRpcError),
+    #[error("Namada error: {0}")]
+    NamadaError(#[from] NamError),
     #[error("Configuration error: {0}")]
     Config(#[from] ConfigError),
     #[error("Configuration error: {0}")]

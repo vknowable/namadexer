@@ -29,6 +29,7 @@ pub struct IndexerConfig {
 pub struct ServerConfig {
     pub serve_at: String,
     pub port: u16,
+    pub tendermint_addr: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,6 +93,7 @@ impl Default for ServerConfig {
         Self {
             serve_at: SERVER_ADDR.to_owned(),
             port: SERVER_PORT,
+            tendermint_addr: TENDERMINT_ADDR.to_owned(),
         }
     }
 }
@@ -189,6 +191,7 @@ impl From<CliSettings> for Settings {
             server: ServerConfig {
                 serve_at: value.server_serve_at,
                 port: value.server_port,
+                tendermint_addr: value.indexer_tendermint_addr.clone(),
             },
             indexer: IndexerConfig {
                 tendermint_addr: value.indexer_tendermint_addr,
