@@ -5,17 +5,18 @@ use axum::{
 use tendermint_rpc::{Paging, PerPage, PageNumber, Client};
 use tokio;
 use tracing::info;
-use namada_sdk::rpc::{query_epoch, query_native_token, get_token_total_supply, get_total_staked_tokens, get_all_validators};
+use namada_sdk::rpc::{query_storage_value, query_epoch, query_native_token, get_token_total_supply, get_total_staked_tokens, get_all_validators, get_pos_params, query_governance_parameters, query_pgf_parameters};
 use namada_sdk::types::{
   storage::Epoch,
   address::Address,
 };
+use namada_parameters::{storage as param_storage, EpochDuration};
 
 use crate::{
   server::ServerState,
   Error, BlockInfo,
 };
-use crate::server::status::{ChainStatus, StakingInfo};
+use crate::server::status::{ChainParams, ChainStatus, GovResponse, PosResponse, ProtocolParams, StakingInfo};
 
 pub async fn get_status(
   State(state): State<ServerState>,
@@ -56,4 +57,47 @@ pub async fn get_status(
   };
 
   Ok(Json(Some(chain_status)))
+}
+
+pub async fn get_chain_params(
+  State(state): State<ServerState>,
+) -> Result<Json<Option<ChainParams>>, Error> {
+  info!("calling /chain/params");
+
+  let pos_params = get_pos_params(&state.http_client).await?;
+  let pgf_params = query_pgf_parameters(&state.http_client).await;
+  let gov_params = query_governance_parameters(&state.http_client).await;
+
+  // protocol params have to be queried individually
+  let epoch_dur_key = param_storage::get_epoch_duration_storage_key();
+  let max_block_dur_key = param_storage::get_max_expected_time_per_block_key();
+  let tx_allowlist_key = param_storage::get_tx_allowlist_storage_key();
+  let vp_allowlist_key = param_storage::get_vp_allowlist_storage_key();
+  let max_block_gas_key = &param_storage::get_max_block_gas_key();
+  
+  let (epoch_dur, max_block_dur, tx_allowlist, vp_allowlist, max_block_gas): 
+    (EpochDuration, u64, Vec<String>, Vec<String>, u64) = tokio::try_join!(
+      query_storage_value(&state.http_client, &epoch_dur_key),
+      query_storage_value(&state.http_client, &max_block_dur_key),
+      query_storage_value(&state.http_client, &tx_allowlist_key),
+      query_storage_value(&state.http_client, &vp_allowlist_key),
+      query_storage_value(&state.http_client, &max_block_gas_key),
+  )?;
+
+
+  let chain_params = ChainParams {
+    protocol_params: ProtocolParams {
+      min_epoch_dur: epoch_dur.min_duration,
+      min_blocks_epoch: epoch_dur.min_num_of_blocks,
+      max_block_dur,
+      tx_allowlist,
+      vp_allowlist,
+      max_block_gas,
+    },
+    pos_params: PosResponse::from(pos_params),
+    pgf_params,
+    gov_params: GovResponse::from(gov_params),
+  };
+
+  Ok(Json(Some(chain_params)))
 }

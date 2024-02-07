@@ -33,7 +33,7 @@ use self::endpoints::{
     block::{get_block_by_hash, get_block_by_height, get_last_block},
     transaction::{get_shielded_tx, get_tx_by_hash, get_vote_proposal},
     validator::{get_validator_uptime, get_validator_info, get_validator_set},
-    status::get_status,
+    status::{get_status, get_chain_params},
 };
 
 pub const HTTP_DURATION_SECONDS_BUCKETS: &[f64; 11] = &[
@@ -63,6 +63,7 @@ fn server_routes(state: ServerState) -> Router<()> {
         .route("/validator/:validator_address/info", get(get_validator_info))
         .route("/validator/set", get(get_validator_set))
         .route("/chain/status", get(get_status))
+        .route("/chain/params", get(get_chain_params))
         .with_state(state)
 }
 

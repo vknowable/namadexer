@@ -4055,6 +4055,7 @@ dependencies = [
  "httpc-test",
  "metrics",
  "metrics-exporter-prometheus",
+ "namada_parameters",
  "namada_sdk",
  "opentelemetry",
  "opentelemetry-jaeger",
