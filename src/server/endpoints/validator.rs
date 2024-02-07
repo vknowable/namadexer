@@ -8,11 +8,11 @@ use sqlx::postgres::PgRow as Row;
 use sqlx::Row as TRow;
 use std::{collections::{BTreeSet, HashMap}, str::FromStr};
 use tracing::{info, instrument};
-use namada_sdk::{masp_primitives::consensus, proof_of_stake::types::{ValidatorState, WeightedValidator}, state::Epoch, types::address::Address};
+use namada_sdk::{proof_of_stake::types::{ValidatorState, WeightedValidator}, types::address::Address};
 use namada_sdk::rpc::{get_validator_stake, get_validator_state, query_epoch, query_metadata};
 use namada_sdk::queries::RPC;
 
-use crate::{server::{validators::{CommissionInfo, ValidatorSet, ValidatorInfoShort}, ServerState}, Error};
+use crate::{server::{validators::{CommissionInfo, ValidatorSet}, ServerState}, Error};
 use crate::server::ValidatorInfo;
 
 // Retrieve the count of commit for a range of blocks from the sql query result.
@@ -89,8 +89,8 @@ pub async fn get_validator_info(
     info!("calling /validator/:validator_address/info");
 
     // TODO: improve this code
-    let mut nam_address: Address;
-    let mut tm_address: String;
+    let nam_address: Address;
+    let tm_address: String;
     match validator_address.starts_with("tnam") {
         true => {
             nam_address = match Address::from_str(&validator_address) {
@@ -240,23 +240,6 @@ async fn fetch_entry_info(state: &ServerState, entry: &WeightedValidator) -> Res
         uptime,
     })
 }
-
-// pub async fn process_consensus_set(State(state): State<ServerState>, consensus: BTreeSet<ValidatorInfoShort>) -> Result<Vec<ValidatorInfoShort>, Error> {
-//     let mut tasks = Vec::new();
-
-//     // Spawn a task for each entry in consensus set
-//     for entry in consensus.iter() {
-//         let state_clone = state.clone(); // Clone state for each task
-//         let entry_clone = entry.clone(); // Clone entry for each task
-//         let task = fetch_entry_info(&state_clone, &entry_clone);
-//         tasks.push(task);
-//     }
-
-//     // Collect results of all tasks concurrently
-//     let results = try_join_all(tasks).await?;
-
-//     Ok(results)
-// }
 
 // helper function for querying POS module directly
 fn unwrap_client_response<C: namada_sdk::queries::Client, T>(

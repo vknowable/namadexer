@@ -19,6 +19,7 @@ pub use status::{ChainStatus, StakingInfo};
 pub mod validators;
 pub use validators::ValidatorInfo;
 pub mod blocks;
+pub mod proposals;
 pub mod tx;
 pub use blocks::BlockInfo;
 pub use tx::TxInfo;
@@ -33,7 +34,8 @@ use self::endpoints::{
     block::{get_block_by_hash, get_block_by_height, get_last_block},
     transaction::{get_shielded_tx, get_tx_by_hash, get_vote_proposal},
     validator::{get_validator_uptime, get_validator_info, get_validator_set},
-    status::{get_status, get_chain_params},
+    status::{get_status, get_chain_params, get_last_epoch},
+    proposal::{get_all_proposals, get_proposal},
 };
 
 pub const HTTP_DURATION_SECONDS_BUCKETS: &[f64; 11] = &[
@@ -64,6 +66,9 @@ fn server_routes(state: ServerState) -> Router<()> {
         .route("/validator/set", get(get_validator_set))
         .route("/chain/status", get(get_status))
         .route("/chain/params", get(get_chain_params))
+        .route("/chain/epoch/last", get(get_last_epoch))
+        .route("/proposals/list", get(get_all_proposals))
+        .route("/proposals/:id/info", get(get_proposal))
         .with_state(state)
 }
 

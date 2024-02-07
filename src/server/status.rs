@@ -1,6 +1,6 @@
-use namada_parameters::EpochDuration;
 use namada_sdk::governance::parameters::GovernanceParameters;
 use namada_sdk::governance::pgf::parameters::PgfParameters;
+use namada_sdk::state::Epoch;
 use serde::{Deserialize, Serialize};
 use tendermint::{chain, block, time};
 use namada_sdk::types::{
@@ -17,6 +17,7 @@ pub struct ChainStatus {
     pub chain_id: chain::Id,
     pub latest_height: block::Height,
     pub last_block_time: time::Time,
+    pub epoch: Epoch,
     pub staking_info: StakingInfo,
 }
 
@@ -127,4 +128,9 @@ pub struct ProtocolParams {
   pub tx_allowlist: Vec<String>,
   pub vp_allowlist: Vec<String>,
   pub max_block_gas: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct EpochResponse {
+  pub epoch: Epoch,
 }

@@ -16,7 +16,7 @@ use crate::{
   server::ServerState,
   Error, BlockInfo,
 };
-use crate::server::status::{ChainParams, ChainStatus, GovResponse, PosResponse, ProtocolParams, StakingInfo};
+use crate::server::status::{ChainParams, ChainStatus, EpochResponse, GovResponse, PosResponse, ProtocolParams, StakingInfo};
 
 pub async fn get_status(
   State(state): State<ServerState>,
@@ -47,6 +47,7 @@ pub async fn get_status(
     chain_id,
     latest_height,
     last_block_time,
+    epoch,
     staking_info: StakingInfo {
       active_validators: active_validators.total as u64,
       total_validators: validators.len() as u64,
@@ -100,4 +101,14 @@ pub async fn get_chain_params(
   };
 
   Ok(Json(Some(chain_params)))
+}
+
+pub async fn get_last_epoch(
+  State(state): State<ServerState>,
+) -> Result<Json<Option<EpochResponse>>, Error> {
+  info!("calling /chain/epoch/last");
+
+  let epoch = query_epoch(&state.http_client).await?;
+
+  Ok(Json(Some(EpochResponse { epoch })))
 }
