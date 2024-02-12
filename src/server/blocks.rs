@@ -1,3 +1,4 @@
+use namada_sdk::state::Epoch;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use tracing::{instrument, trace};
@@ -244,4 +245,13 @@ impl TryFrom<&Row> for BlockInfo {
             tx_hashes: vec![],
         })
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct BlockInfoWithEpoch {
+    pub block_id: HashID,
+    pub header: Header,
+    pub last_commit: Option<LastCommitInfo>,
+    pub tx_hashes: Vec<TxShort>,
+    pub epoch: Option<Epoch>,
 }

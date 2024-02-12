@@ -1,6 +1,8 @@
 use crate::error::Error;
+use namada_sdk::eth_bridge::ethers::providers::test_provider;
 use namada_sdk::ibc::apps::transfer::types::msgs::transfer::MsgTransfer;
 use namada_sdk::tx::data::pos::BecomeValidator;
+use namada_sdk::tx::Memo;
 use namada_sdk::types::key::common::PublicKey;
 use namada_sdk::{
     account::{InitAccount, UpdateAccount},
@@ -85,7 +87,9 @@ pub struct TxInfo {
     #[serde(serialize_with = "serialize_optional_hex")]
     data: Option<Vec<u8>>,
     /// Inner transaction type
-    tx: Option<TxDecoded>,
+    pub tx: Option<TxDecoded>,
+    /// memo included with tx
+    memo: Option<String>,
 }
 
 impl TxInfo {
@@ -189,6 +193,26 @@ impl TryFrom<Row> for TxInfo {
         let gas_limit_multiplier = row.try_get("gas_limit_multiplier")?;
         let code: Option<Vec<u8>> = row.try_get("code")?;
         let data: Option<Vec<u8>> = row.try_get("data")?;
+        let memo_bytes: Option<Vec<u8>> = row.try_get("memo")?;
+
+        // println!("here");
+        // let test_memo = memo.clone();
+        // if let Some(memo) = test_memo {
+        //     let test = String::from_utf8(memo);
+        //     println!("here2");
+        //     println!("{:?}", test);
+        // }
+        let memo: Option<String>;
+        if let Some(memo_bytes) = memo_bytes {
+            memo = match String::from_utf8(memo_bytes) {
+                Ok(memo) => Some(memo),
+                Err(_) => None,
+            }
+        }
+        else {
+            memo = None;
+        }
+        
 
         Ok(Self {
             hash,
@@ -201,6 +225,7 @@ impl TryFrom<Row> for TxInfo {
             code,
             data,
             tx: None,
+            memo,
         })
     }
 }

@@ -12,7 +12,7 @@ use namada_sdk::{proof_of_stake::types::{ValidatorState, WeightedValidator}, typ
 use namada_sdk::rpc::{get_validator_stake, get_validator_state, query_epoch, query_metadata};
 use namada_sdk::queries::RPC;
 
-use crate::{server::{validators::{CommissionInfo, ValidatorSet}, ServerState}, Error};
+use crate::{server::{validators::{CommissionInfo, ValidatorSet}, Pagination, PaginationResponse, ServerState}, Error};
 use crate::server::ValidatorInfo;
 
 // Retrieve the count of commit for a range of blocks from the sql query result.
@@ -155,8 +155,10 @@ pub async fn get_validator_info(
 }
 
 /// get validator sets by category
+// TODO: this is very slow... can the validator set be found from the db? or create a 'validators' table which indexes this info
 pub async fn get_validator_set(
     State(state): State<ServerState>,
+    Query(pagination): Query<Pagination>,
 ) -> Result<Json<ValidatorSet>, Error> {
     info!("calling /validator/set");
 
@@ -170,10 +172,27 @@ pub async fn get_validator_set(
                 .await,
         );
 
+    // Convert BTreeSet to Vec for sorting
+    let mut consensus_vec: Vec<WeightedValidator> = consensus.into_iter().collect();
+
+    // Sort the vector by bonded_stake from highest to lowest
+    consensus_vec.sort_by(|a, b| b.bonded_stake.cmp(&a.bonded_stake));
+
+    // Calculate range of entries to fetch based on pagination
+    let start_index = if pagination.page <= 0 {
+        0 // If pagination.page is 0, start_index should be 0
+    } else {
+        (pagination.page - 1) * pagination.per_page
+    };
+    // let end_index = start_index + pagination.per_page;
+    let paginated_set: Vec<_> = consensus_vec.iter().cloned().skip(start_index as usize).take(pagination.per_page as usize).collect();
+
+
     let mut tasks = Vec::new();
 
     // Spawn a task for each entry in consensus set
-    for entry in consensus.iter() {
+    // for entry in consensus.iter() {
+    for entry in paginated_set.iter() {
         let task = fetch_entry_info(&state, &entry);
         tasks.push(task);
     }
@@ -192,9 +211,14 @@ pub async fn get_validator_set(
     );
 
     let validator_count = ValidatorSet {
-        consensus_count: consensus_set.len() as u64,
+        consensus_count: consensus_vec.len() as u64,
         below_capacity_count: below_capacity.len() as u64,
         consensus_set,
+        pagination: PaginationResponse {
+            page: (start_index/pagination.per_page)+1,
+            per_page: pagination.per_page,
+            total: consensus_vec.len() as u64,
+        }
     };
 
     Ok(Json(validator_count))

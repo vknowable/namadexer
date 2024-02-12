@@ -5,7 +5,7 @@ use namada_sdk::{proof_of_stake::types::ValidatorMetaData, types::{
   dec::Dec,
 }};
 
-use super::endpoints::validator::UptimeValue;
+use super::{endpoints::validator::UptimeValue, PaginationResponse};
 
 /// Info for a single validator
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -37,4 +37,5 @@ pub struct ValidatorSet {
   pub consensus_count: u64,
   pub below_capacity_count: u64,
   pub consensus_set: Vec<ValidatorInfo>,
+  pub pagination: PaginationResponse,
 }

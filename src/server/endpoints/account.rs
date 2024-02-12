@@ -1,12 +1,18 @@
+use std::str::FromStr;
+
 use axum::{
     extract::{Path, State},
     Json,
 };
-
+use tendermint_rpc::HttpClient;
+use tracing::info;
 use crate::{
-    server::{account::AccountUpdates, ServerState},
+    server::{account::{AccountSummary, AccountUpdates}, ServerState},
     Error,
 };
+use tokio;
+use namada_sdk::{queries::RPC, rpc::{get_token_balance, is_steward, is_validator, known_address, query_native_token, query_storage_value}, types::{address::Address, token::Amount}};
+use namada_sdk::types::storage::Key;
 use sqlx::Row as TRow;
 
 /// Retrieves the update history for a specific account.
@@ -84,3 +90,65 @@ pub async fn get_account_updates(
         public_keys,
     })))
 }
+
+pub async fn get_account_summary(
+    State(state): State<ServerState>,
+    Path(address): Path<String>,
+  ) -> Result<Json<Option<AccountSummary>>, Error> {
+    info!("calling /account/:address/info");
+
+    let nam_address = match Address::from_str(&address) {
+        Ok(result) => result,
+        Err(_) => return Err(Error::InvalidValidatorAddress)
+    };
+
+    let native_token = query_native_token(&state.http_client).await?;
+
+    let is_steward = is_steward(&state.http_client, &nam_address).await;
+    // let is_validator = is_validator(&state.http_client, &nam_address).await?;
+    // let known_address = known_address(&state.http_client, &nam_address).await?;
+    // let native_balance = get_token_balance(&state.http_client, &native_token, &nam_address).await?;
+
+    let (is_validator, known_address, native_balance): (bool, bool, Amount) = tokio::try_join!(
+        is_validator(&state.http_client, &nam_address),
+        known_address(&state.http_client, &nam_address),
+        get_token_balance(&state.http_client, &native_token, &nam_address),
+    )?;
+
+    // TODO: balances for other tokens on chain
+
+    // use async pattern
+    // query ibc tokens and balances
+    // let ibc_prefixes = vec![ibc_denom_key_prefix(None)];
+
+    // for prefix in prefixes {
+
+    // }
+
+    // let tokens = query_tokens(context, None, Some(&owner)).await;
+    // for (token_alias, token) in tokens {
+    //     let balance =
+    //         get_token_balance(context.client(), &token, &owner).await;
+    //     if !balance.is_zero() {
+    //         let balance = context.format_amount(&token, balance).await;
+    //         display_line!(context.io(), "{}: {}", token_alias, balance);
+    //     }
+    // }
+
+    let account_summary = AccountSummary {
+        is_validator,
+        is_steward,
+        native_balance,
+        known_address,
+    };
+  
+    return Ok(Json(Some(account_summary)))
+  }
+
+//   async fn query_token_prefix(client: &HttpClient, key: &Key) {
+//     let values = convert_response(
+//         RPC.shell()
+//             .storage_prefix(client, None, None, false, key)
+//             .await,
+//     )?;
+//   }

@@ -5,12 +5,12 @@ use axum::{
 use futures::future::try_join_all;
 use tracing::info;
 use crate::{
-  server::ServerState,
+  server::{proposals::ResultResponse, ServerState},
   Error,
 };
 
 use namada_sdk::governance::storage::keys as governance_storage;
-use namada_sdk::rpc::{query_storage_value, query_proposal_by_id};
+use namada_sdk::rpc::{query_storage_value, query_proposal_by_id, query_proposal_result};
 use crate::server::proposals::{ProposalInfo, ProposalList};
 
 pub async fn get_all_proposals(
@@ -56,7 +56,21 @@ pub async fn get_proposal(
   return Ok(Json(None))
 }
 
+pub async fn get_proposal_result(
+  State(state): State<ServerState>,
+  Path(id): Path<u64>,
+) -> Result<Json<Option<ResultResponse>>, Error> {
+  info!("calling /proposals/:id/result");
+
+  if let Some(proposal_result) = query_proposal_result(&state.http_client, id).await? {
+    return Ok(Json(Some(ResultResponse::from(proposal_result))))
+  }
+
+  return Ok(Json(None))
+}
+
 async fn fetch_proposal_info(state: &ServerState, id: u64) -> Result<Option<ProposalInfo>, Error> {
+  // TODO: this could maybe be done faster by checking db, but proposal vote indexing doesn't seem to be working currently (empty table)
   if let Some(proposal) = query_proposal_by_id(&state.http_client, id).await? {
     return Ok(Some(ProposalInfo::from(proposal)))
   }
