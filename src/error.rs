@@ -29,7 +29,7 @@ pub enum Error {
     TendermintRpcError(#[from] TRpcError),
     #[error("Namada error: {0}")]
     NamadaError(#[from] NamError),
-    #[error("Configuration error: {0}")]
+    #[error("Configuration file error: {0}")]
     Config(#[from] ConfigError),
     #[error("Configuration error: {0}")]
     IO(#[from] std::io::Error),
