@@ -8,7 +8,12 @@ use std::collections::HashMap;
 use tracing::info;
 
 use crate::{
-    server::{blocks::{BlockInfoWithEpoch, HashID, TxShort}, tx::TxDecoded, tx::TxInfo, ServerState},
+    server::{
+        blocks::{BlockInfoWithEpoch, HashID, TxShort},
+        tx::TxDecoded,
+        tx::TxInfo,
+        ServerState,
+    },
     BlockInfo, Error,
 };
 use namada_sdk::rpc::query_epoch_at_height;
@@ -16,8 +21,8 @@ use namada_sdk::rpc::query_epoch_at_height;
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum LatestBlock {
-    LastBlock(Box<BlockInfo>),
-    LatestBlocks(Vec<BlockInfo>),
+    LastBlock(Box<BlockInfoWithEpoch>),
+    LatestBlocks(Vec<BlockInfoWithEpoch>),
 }
 
 async fn get_tx_hashes(
@@ -40,7 +45,7 @@ async fn get_tx_hashes(
                 break;
             };
             let mut tx = TxInfo::try_from(row)?;
-        
+
             // ignore the error for now
             _ = tx.decode_tx(&state.checksums_map);
             // println!("{:?}", tx.tx);
@@ -55,17 +60,21 @@ async fn get_tx_hashes(
                 Some(TxDecoded::InitAccount(_)) => "InitAccount".to_string(),
                 Some(TxDecoded::UpdateAccount(_)) => "UpdateAccount".to_string(),
                 Some(TxDecoded::ResignSteward(_)) => "ResignSteward".to_string(),
-                Some(TxDecoded::UpdateStewardCommission(_)) => "UpdateStewardCommission".to_string(),
+                Some(TxDecoded::UpdateStewardCommission(_)) => {
+                    "UpdateStewardCommission".to_string()
+                }
                 Some(TxDecoded::EthPoolBridge(_)) => "EthPoolBridge".to_string(),
                 Some(TxDecoded::Ibc(_)) => "Ibc".to_string(),
                 _ => "Decrypted".to_string(),
             }
-        }
-        else {
+        } else {
             descriptive_type = "Wrapper".to_string();
         }
 
-        tx_hashes.push(TxShort { tx_type: descriptive_type, hash_id });
+        tx_hashes.push(TxShort {
+            tx_type: descriptive_type,
+            hash_id,
+        });
     }
 
     block.tx_hashes = tx_hashes;
@@ -112,6 +121,7 @@ pub async fn get_block_by_height(
     Ok(Json(Some(block)))
 }
 
+// TODO: indexing epoch for each block would be faster than querying node at request time
 pub async fn get_last_block(
     State(state): State<ServerState>,
     Query(params): Query<HashMap<String, i32>>,
@@ -123,7 +133,7 @@ pub async fn get_last_block(
 
     if let Some(n) = num {
         let rows = state.db.get_lastest_blocks(n, offset).await?;
-        let mut blocks: Vec<BlockInfo> = vec![];
+        let mut blocks: Vec<BlockInfoWithEpoch> = vec![];
 
         for row in rows {
             let mut block = BlockInfo::try_from(&row)?;
@@ -131,7 +141,17 @@ pub async fn get_last_block(
             let block_id: Vec<u8> = row.try_get("block_id")?;
             get_tx_hashes(&state, &mut block, &block_id).await?;
 
-            blocks.push(block);
+            let epoch = query_epoch_at_height(&state.http_client, block.header.height.into()).await?;
+
+            let block_with_epoch = BlockInfoWithEpoch {
+                block_id: block.block_id,
+                header: block.header,
+                last_commit: block.last_commit,
+                tx_hashes: block.tx_hashes,
+                epoch,
+            };
+
+            blocks.push(block_with_epoch);
         }
 
         Ok(Json(LatestBlock::LatestBlocks(blocks)))
@@ -143,15 +163,16 @@ pub async fn get_last_block(
         let block_id: Vec<u8> = row.try_get("block_id")?;
         get_tx_hashes(&state, &mut block, &block_id).await?;
 
-    let epoch = query_epoch_at_height(&state.http_client, block.header.height.into()).await?;
+        let epoch = query_epoch_at_height(&state.http_client, block.header.height.into()).await?;
 
-    let block_with_epoch = BlockInfoWithEpoch {
-        block_id: block.block_id,
-        header: block.header,
-        last_commit: block.last_commit,
-        tx_hashes: block.tx_hashes,
-        epoch,
-    };
+        let block_with_epoch = Box::new(BlockInfoWithEpoch {
+            block_id: block.block_id,
+            header: block.header,
+            last_commit: block.last_commit,
+            tx_hashes: block.tx_hashes,
+            epoch,
+        });
 
-    Ok(Json(block_with_epoch))
+        Ok(Json(LatestBlock::LastBlock(block_with_epoch)))
+    }
 }
