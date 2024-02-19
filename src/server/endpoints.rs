@@ -4,3 +4,4 @@ pub mod transaction;
 pub mod validator;
 pub mod status;
 pub mod proposal;
+pub mod signature;

@@ -28,6 +28,7 @@ pub mod tx;
 pub use blocks::BlockInfo;
 pub use tx::TxInfo;
 pub mod account;
+pub mod signatures;
 mod endpoints;
 pub mod shielded;
 mod utils;
@@ -40,6 +41,7 @@ use self::endpoints::{
     validator::{get_validator_uptime, get_validator_info, get_validator_set},
     status::{get_status, get_chain_params, get_last_epoch},
     proposal::{get_all_proposals, get_proposal, get_proposal_result},
+    signature::get_signatures_by_block_hash,
 };
 
 pub const HTTP_DURATION_SECONDS_BUCKETS: &[f64; 11] = &[
@@ -58,6 +60,7 @@ fn server_routes(state: ServerState) -> Router<()> {
         .route("/block/height/:block_height", get(get_block_by_height))
         .route("/block/hash/:block_hash", get(get_block_by_hash))
         .route("/block/last", get(get_last_block))
+        .route("/block/signatures/:block_hash", get(get_signatures_by_block_hash))
         .route("/tx/:tx_hash", get(get_tx_by_hash))
         .route("/tx/vote_proposal/:proposal_id", get(get_vote_proposal))
         .route("/tx/shielded", get(get_shielded_tx))

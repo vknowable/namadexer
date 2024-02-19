@@ -50,6 +50,7 @@ use crate::tables::{
 use metrics::{histogram, increment_counter};
 
 const BLOCKS_TABLE_NAME: &str = "blocks";
+const SIGNATURES_TABLE_NAME: &str = "commit_signatures";
 const TX_TABLE_NAME: &str = "transactions";
 
 // Max time to wait for a succesfull database connection
@@ -1130,6 +1131,21 @@ impl Database {
         query(&str)
             .bind(block_id)
             .fetch_optional(&*self.pool)
+            .await
+            .map_err(Error::from)
+    }
+
+    /// Get list of signatures for a specified block hash
+    #[instrument(skip(self, block_id))]
+    pub async fn signatures_by_block_hash(&self, block_id: &[u8]) -> Result<Vec<Row>, Error> {
+        // query for the block if it exists
+        let str = format!(
+            "SELECT * FROM {}.{SIGNATURES_TABLE_NAME} WHERE block_id=$1",
+            self.network
+        );
+        query(&str)
+            .bind(block_id)
+            .fetch_all(&*self.pool)
             .await
             .map_err(Error::from)
     }
