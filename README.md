@@ -1,3 +1,18 @@
+# Namadexer based backend for Knowmada explorer:
+
+This fork includes a few extra endpoints to query data for the explorer front-end from the Namada full node. Setup is the same as usual, with a couple of notes:  
+1. The server needs access to the Namada full node for queries when serving some data that is not indexed (eg: current epoch, current validator set). Therefore, the server will also use the address present in the Settings.toml under
+```
+[indexer]
+tendermint_addr = "http://127.0.0.1:46657"
+```
+despite the name, this applies to both server and indexer.  
+
+2. The server uses a combination of pulling indexed data from the db and querying the full node on demand. Therefore, if the indexer is out of sync, you may end up with a situation where some data (eg: latest blocks/transactions) is only up to date with the db, while others (eg: current epoch, current governance proposals) is up to date with the chain. In the future, it would be nice to standardize queries to be able to read eg: the validator set at a specific height instead of the latest, to improve accuracy. But for now, as long as both your node and indexer are synced to the chain head, everything should work as expected.  
+
+---
+### Below is the original README content
+
 # Namadexer
 
 Namadexer is an indexer for [Namada](https://github.com/anoma/namada).
