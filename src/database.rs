@@ -31,7 +31,7 @@ use tendermint::block::Block;
 use tendermint_proto::types::evidence::Sum;
 use tendermint_proto::types::CommitSig;
 use tendermint_rpc::endpoint::block_results;
-use tracing::{info, instrument, trace};
+use tracing::{debug, info, instrument, trace};
 
 use crate::{
     DB_SAVE_BLOCK_COUNTER, DB_SAVE_BLOCK_DURATION, DB_SAVE_COMMIT_SIG_DURATION,
@@ -333,7 +333,7 @@ impl Database {
         sqlx_tx: &mut Transaction<'a, sqlx::Postgres>,
         network: &str,
     ) -> Result<(), Error> {
-        info!("saving commit signatures");
+        debug!("saving commit signatures");
 
         let mut query_builder: QueryBuilder<_> = QueryBuilder::new(format!(
             "INSERT INTO {}.commit_signatures(
@@ -444,7 +444,7 @@ impl Database {
         sqlx_tx: &mut Transaction<'a, sqlx::Postgres>,
         network: &str,
     ) -> Result<(), Error> {
-        info!("saving evidences");
+        debug!("saving evidences");
 
         let mut query_builder: QueryBuilder<_> = QueryBuilder::new(format!(
             "INSERT INTO {}.evidences(
@@ -569,7 +569,7 @@ impl Database {
             return Ok(());
         }
 
-        info!(message = "Saving transactions");
+        debug!(message = "Saving transactions");
 
         let mut query_builder: QueryBuilder<_> = QueryBuilder::new(format!(
             "INSERT INTO {}.transactions(
@@ -653,7 +653,7 @@ impl Database {
                 let unknown_type = "unknown".to_string();
                 let type_tx = checksums_map.get(&code_hex).unwrap_or(&unknown_type);
 
-                info!("Saving {} transaction", type_tx);
+                debug!("Saving {} transaction", type_tx);
 
                 // decode tx_transfer, tx_bond and tx_unbound to store the decoded data in their tables
                 // if the transaction has failed don't try to decode because the changes are not included and the data might not be correct
