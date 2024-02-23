@@ -852,6 +852,42 @@ impl Database {
                             // so far to link those transactions to this.
                             _ = InitAccount::try_from_slice(&data[..])?;
                         }
+                        // "tx_init_validator" => {
+                        //     _ = BecomeValidator::try_from_slice(&data[..])?;
+                        // }
+                        // "tx_withdraw" => {
+                        //     _ = Withdraw::try_from_slice(&data[..])?;
+                        // }
+                        // "tx_ibc" => {
+                        //     _ = Self::decode_ibc(&data[..])?;
+                        // }
+                        // "tx_become_validator" => {
+                        //     _ = BecomeValidator::try_from_slice(&data[..])?;
+                        // }
+                        // "tx_change_consensus_key" => {
+                        //     _ = ConsensusKeyChange::try_from_slice(&data[..])?;
+                        // }
+                        // "tx_change_validator_commission" => {
+                        //     _ = CommissionChange::try_from_slice(&data[..])?;
+                        // }
+                        // "tx_change_validator_metadata" => {
+                        //     _ = MetaDataChange::try_from_slice(&data[..])?;
+                        // }
+                        // "tx_claim_rewards" => {
+                        //     _ = Withdraw::try_from_slice(&data[..])?;
+                        // }
+                        // "tx_deactivate_validator" => {
+                        //     _ = Address::try_from_slice(&data[..])?;
+                        // }
+                        // "tx_init_proposal" => {
+                        //     _ = InitProposalData::try_from_slice(&data[..])?;
+                        // }
+                        // "tx_reactivate_validator" => {
+                        //     _ = Address::try_from_slice(&data[..])?;
+                        // }
+                        // "tx_unjail_validator" => {
+                        //     _ = Address::try_from_slice(&data[..])?;
+                        // }
                         "tx_update_account" => {
                             // check that transaction can be parsed
                             // before storing it into database

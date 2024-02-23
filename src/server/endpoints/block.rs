@@ -55,6 +55,7 @@ async fn get_tx_hashes(
                 Some(TxDecoded::RevealPK(_)) => "RevealPK".to_string(),
                 Some(TxDecoded::VoteProposal(_)) => "VoteProposal".to_string(),
                 Some(TxDecoded::BecomeValidator(_)) => "BecomeValidator".to_string(),
+                Some(TxDecoded::InitValidator(_)) => "InitValidator".to_string(),
                 Some(TxDecoded::Unbond(_)) => "Unbond".to_string(),
                 Some(TxDecoded::Withdraw(_)) => "Withdraw".to_string(),
                 Some(TxDecoded::InitAccount(_)) => "InitAccount".to_string(),
@@ -65,6 +66,14 @@ async fn get_tx_hashes(
                 }
                 Some(TxDecoded::EthPoolBridge(_)) => "EthPoolBridge".to_string(),
                 Some(TxDecoded::Ibc(_)) => "Ibc".to_string(),
+                Some(TxDecoded::ConsensusKeyChange(_)) => "ConsensusKeyChange".to_string(),
+                Some(TxDecoded::CommissionChange(_)) => "CommissionChange".to_string(),
+                Some(TxDecoded::MetaDataChange(_)) => "MetaDataChange".to_string(),
+                Some(TxDecoded::ClaimRewards(_)) => "ClaimRewards".to_string(),
+                Some(TxDecoded::DeactivateValidator(_)) => "DeactivateValidator".to_string(),
+                Some(TxDecoded::ReactivateValidator(_)) => "ReactivateValidator".to_string(),
+                Some(TxDecoded::UnjailValidator(_)) => "UnjailValidator".to_string(),
+                Some(TxDecoded::InitProposal(_)) => "InitProposal".to_string(),
                 _ => "Decrypted".to_string(),
             }
         } else {
