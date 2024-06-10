@@ -61,10 +61,10 @@ pub async fn save_blocks(
     db: &Database,
     blocks: impl Iterator<Item = &mut Block>,
     results: impl Iterator<Item = &block_results::Response>,
-    checksums: &HashMap<String, String>,
+    _checksums: &HashMap<String, String>,
 ) {
     for (block, result) in blocks.zip(results) {
-        db.save_block(block, result, checksums).await.unwrap();
+        db.save_block(block, result).await.unwrap();
     }
 }
 

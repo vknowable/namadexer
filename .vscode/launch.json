@@ -1,0 +1,285 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'namadexer'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--lib",
+          "--package=namadexer"
+        ],
+        "filter": {
+          "name": "namadexer",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'server'",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=server",
+          "--package=namadexer"
+        ],
+        "filter": {
+          "name": "server",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'server'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=server",
+          "--package=namadexer"
+        ],
+        "filter": {
+          "name": "server",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'indexer'",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=indexer",
+          "--package=namadexer"
+        ],
+        "filter": {
+          "name": "indexer",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "INDEXER_CONFIG_PATH": "${workspaceFolder}/config/Settings.toml"
+      }
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'server'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=server",
+          "--package=namadexer"
+        ],
+        "filter": {
+          "name": "server",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Launch executable 'indexer'",
+      "program": "${workspaceFolder}/target/debug/indexer",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "INDEXER_CONFIG_PATH": "${workspaceFolder}/config/Settings.toml"
+      }
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'indexer'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=indexer",
+          "--package=namadexer"
+        ],
+        "filter": {
+          "name": "indexer",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug example 'generate'",
+      "cargo": {
+        "args": [
+          "build",
+          "--example=generate",
+          "--package=namadexer"
+        ],
+        "filter": {
+          "name": "generate",
+          "kind": "example"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in example 'generate'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--example=generate",
+          "--package=namadexer"
+        ],
+        "filter": {
+          "name": "generate",
+          "kind": "example"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug integration test 'utils'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--test=utils",
+          "--package=namadexer"
+        ],
+        "filter": {
+          "name": "utils",
+          "kind": "test"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug integration test 'block_tests'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--test=block_tests",
+          "--package=namadexer"
+        ],
+        "filter": {
+          "name": "block_tests",
+          "kind": "test"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug integration test 'save_block'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--test=save_block",
+          "--package=namadexer"
+        ],
+        "filter": {
+          "name": "save_block",
+          "kind": "test"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug benchmark 'save_blocks_bench'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bench=save_blocks_bench",
+          "--package=namadexer"
+        ],
+        "filter": {
+          "name": "save_blocks_bench",
+          "kind": "bench"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug benchmark 'get_block_bench'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bench=get_block_bench",
+          "--package=namadexer"
+        ],
+        "filter": {
+          "name": "get_block_bench",
+          "kind": "bench"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug benchmark 'utils'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bench=utils",
+          "--package=namadexer"
+        ],
+        "filter": {
+          "name": "utils",
+          "kind": "bench"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

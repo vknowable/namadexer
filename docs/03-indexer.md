@@ -128,7 +128,7 @@ The `evidences` table contains the evidences of validators misbehavior. Only one
 
 ### Transactions
 
-The `transactions` table contains all the transactions that either encrypted or decrypted (defined by the `tx_type`). The decrypted data is then stored as a json object under `data`. The data is decoded in the indexer side before being stored.
+The `transactions` table contains all the transactions that either encrypted or raw (defined by the `tx_type`). The raw tx data is then stored as a json object under `data`. The data is decoded in the indexer side before being stored.
 
 NOTE: it doesn't seem to be worth storing the encrypted data as no computation can be done over it. If a specific use case is mentioned it can be added.
 
