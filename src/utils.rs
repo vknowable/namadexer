@@ -10,7 +10,7 @@ pub fn tx_type_name(tx_type: &TxType) -> String {
     match tx_type {
         TxType::Raw => "Raw".to_string(),
         TxType::Wrapper(_) => "Wrapper".to_string(),
-        TxType::Decrypted(_) => "Decrypted".to_string(),
+        // TxType::Decrypted(_) => "Decrypted".to_string(),
         TxType::Protocol(_) => "Protocol".to_string(),
     }
 }
