@@ -7,3 +7,5 @@ protoc/*
 checksums.*
 .idea
 config/Settings.toml
+MakePG
+.vscode

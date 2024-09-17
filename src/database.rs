@@ -837,10 +837,11 @@ impl Database {
             }
 
             // look for wrapper tx to link to
-            let txs = query(&format!("SELECT * FROM {0}.transactions WHERE block_id IN (SELECT block_id FROM {0}.blocks WHERE header_height = {1});", network, block_height-1))
-                .fetch_all(&mut *sqlx_tx)
-                .await?;
-            txid_wrapper = txs[i].try_get("hash")?;
+            // let txs = query(&format!("SELECT * FROM {0}.transactions WHERE block_id IN (SELECT block_id FROM {0}.blocks WHERE header_height = {1});", network, block_height-1))
+            //     .fetch_all(&mut *sqlx_tx)
+            //     .await?;
+            // txid_wrapper = txs[i].try_get("hash")?;
+            txid_wrapper = hash_id.clone();
             i += 1;
 
             // code = tx
@@ -877,7 +878,8 @@ impl Database {
                 match type_tx.as_str() {
                     "tx_transfer" => {
                         let transfer = token::Transfer::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(transfer)?;
+                        let transfer_json = utils::TransferJson::from_transfer(transfer)?;
+                        data_json = serde_json::to_value(transfer_json)?;
                     }
                     "tx_bond" => {
                         let bond = Bond::try_from_slice(&data[..])?;

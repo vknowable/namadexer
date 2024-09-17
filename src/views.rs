@@ -1,3 +1,5 @@
+use crate::utils::{self, reverse_checksums};
+
 pub fn get_drop_tx_become_validator_view_query(network: &str) -> String {
     format!("DROP VIEW IF EXISTS {network}.tx_become_validator;")
 }
@@ -220,16 +222,21 @@ pub fn get_drop_tx_transfer_view_query(network: &str) -> String {
 }
 
 pub fn get_create_tx_transfer_view_query(network: &str) -> String {
-    format!("CREATE OR REPLACE VIEW {network}.tx_transfer AS
-    SELECT
-    hash AS txid,
-    data->>'source' AS source,
-    data->>'target' AS target,
-    data->>'token' AS token,
-    data->>'amount' AS amount,
-    data->>'key' AS key,
-    data->>'shielded' AS shielded
-    FROM {network}.transactions WHERE code = '\\x0960374d23acbac1feb27b3888095859217936c900cef54e559d215cec3206ef' AND return_code = 0;")
+    if let Some(code) = reverse_checksums().get("tx_transfer") {
+        format!("CREATE OR REPLACE VIEW {network}.tx_transfer AS
+        SELECT
+        hash AS txid,
+        data->>'source' AS source,
+        data->>'target' AS target,
+        data->>'token' AS token,
+        data->>'amount' AS amount,
+        data->>'key' AS key,
+        data->>'shielded' AS shielded
+        FROM {network}.transactions WHERE code = '\\x{code}' AND return_code = 0;")
+    }
+    else {
+        String::new()
+    }
 }
 
 pub fn get_drop_tx_unbond_view_query(network: &str) -> String {
