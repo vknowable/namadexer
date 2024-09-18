@@ -4381,6 +4381,8 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "sqlx",
+ "strum",
+ "strum_macros",
  "tendermint",
  "tendermint-config",
  "tendermint-proto",

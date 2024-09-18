@@ -1,6 +1,7 @@
 use crate::queries::insert_block_query;
 use crate::{config::DatabaseConfig, error::Error, utils};
 use serde_json::json;
+use strum::IntoEnumIterator;
 
 use namada_sdk::{
     key::common::PublicKey,
@@ -45,7 +46,7 @@ use crate::tables::{
     get_create_block_table_query, get_create_commit_signatures_table_query,
     get_create_evidences_table_query, get_create_transactions_table_query,
 };
-use crate::views;
+use crate::views::{self, ViewType};
 
 use metrics::{gauge, histogram, increment_counter};
 
@@ -148,187 +149,20 @@ impl Database {
             .await?;
 
         // Drop any existing views
+        for view in ViewType::iter() {
+            let drop_query = views::get_drop_view_query(&self.network, &view);
+            query(drop_query.as_str())
+                .execute(&*self.pool)
+                .await?;
+        }
 
-        query(views::get_drop_tx_become_validator_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_bond_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_bridge_pool_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_change_consensus_key_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_change_validator_comission_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_change_validator_metadata_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_claim_rewards_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_deactivate_validator_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_ibc_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_init_account_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_init_proposal_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_reactivate_validator_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_redelegate_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_resign_steward_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_reveal_pk_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_transfer_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_transfert_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_unbond_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_unjail_validator_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_update_account_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_update_steward_commission_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_vote_proposal_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_drop_tx_withdraw_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        // Create views
-        query(views::get_create_tx_become_validator_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_bond_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_bridge_pool_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_change_consensus_key_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_change_validator_comission_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_change_validator_metadata_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_claim_rewards_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_deactivate_validator_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_ibc_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_init_account_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_init_proposal_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_reactivate_validator_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_redelegate_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_resign_steward_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_reveal_pk_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_transfer_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_unbond_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_unjail_validator_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_update_account_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_update_steward_commission_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_vote_proposal_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        query(views::get_create_tx_withdraw_view_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
+        // Create transaction views
+        for view in ViewType::iter() {
+            let create_query = views::get_create_view_query(&self.network, &view);
+            query(create_query.as_str())
+                .execute(&*self.pool)
+                .await?;
+        }
 
         Ok(())
     }
@@ -764,41 +598,27 @@ impl Database {
         // being 8 the number of columns.
         let mut tx_values = Vec::with_capacity(txs.len());
 
-        let mut i: usize = 0;
         for t in txs.iter() {
             let tx = Tx::try_from(t.as_slice()).map_err(|e| Error::InvalidTxData(e.to_string()))?;
 
             // TODO: this currently only supports the case where tx batch length is 1
             // needs to be generalized to iterate over all tx commitments in a batch
             let cmt = tx.first_commitments().unwrap().to_owned();
-            // let mut code = Default::default();
+
             let mut code_type: String = "none".to_string();
-            // let memo: Vec<u8> = tx.memo().unwrap_or_default();
+
             let memo: Vec<u8> = tx.memo(&cmt).unwrap_or_default();
             let mut txid_wrapper: Vec<u8> = vec![];
-            // let mut hash_id = tx.header_hash().to_vec();
+
             let mut data_json: serde_json::Value = json!(null);
             let mut return_code: Option<i32> = None;
 
-            // Decrypted transaction give access to the raw data
-            // if let TxType::Decrypted(..) = tx.header().tx_type {
-
-            // // For unknown reason the header has to be updated before hashing it for its id (https://github.com/Zondax/namadexer/issues/23)
-            // hash_id = tx.clone().update_header(TxType::Raw).header_hash().to_vec();
-            // let hash_id_str = hex::encode(&hash_id);
-            // Wrapper (outer) transaction hash
             let hash_id = tx.header_hash().to_vec();
             let hash_id_str = hex::encode(&hash_id);
 
             // Safe to use unwrap because if it is not present then something is broken.
             let end_events = block_results.end_block_events.clone().unwrap();
 
-            // // filter to get the matching event for hash_id
-            // let matching_event = end_events.iter().find(|event| {
-            //     event.attributes.iter().any(|attr| {
-            //         attr.key == "hash" && attr.value.to_ascii_lowercase() == hash_id_str
-            //     })
-            // });
             // filter to get the matching event for the (wrapper) hash_id
             let matching_event = end_events.iter().find(|event| {
                 event.attributes.iter().any(|attr| {
@@ -810,17 +630,6 @@ impl Database {
                 })
             });
 
-            // // now for the event get its attribute and parse the return code
-            // if let Some(event) = matching_event {
-            //     // Now, look for the "code" attribute in the found event
-            //     if let Some(code_attr) = event.attributes.iter().find(|attr| attr.key == "code")
-            //     {
-            //         // Parse the code value.
-            //         // It could be possible to ignore the error by converting the result
-            //         // to an Option<i32> but it is better to fail if the value is not a number.
-            //         return_code = Some(code_attr.value.parse()?);
-            //     }
-            // }
             // now for the event get its attribute and parse the return code
             if let Some(event) = matching_event {
                 // Now, look for the "code" attribute in the found event
@@ -836,20 +645,8 @@ impl Database {
                 }
             }
 
-            // look for wrapper tx to link to
-            // let txs = query(&format!("SELECT * FROM {0}.transactions WHERE block_id IN (SELECT block_id FROM {0}.blocks WHERE header_height = {1});", network, block_height-1))
-            //     .fetch_all(&mut *sqlx_tx)
-            //     .await?;
-            // txid_wrapper = txs[i].try_get("hash")?;
             txid_wrapper = hash_id.clone();
-            i += 1;
 
-            // code = tx
-            //     .get_section(tx.code_sechash())
-            //     .and_then(|s| s.code_sec())
-            //     .map(|s| s.code.hash().0)
-            //     .ok_or(Error::InvalidTxData("no code hash".into()))?;
-            // from the code section for this commitment, get the tx type as a string
             let code = tx
                 .get_section(&cmt.code_hash)
                 .and_then(|s| s.code_sec())
@@ -863,9 +660,6 @@ impl Database {
             // decode tx_transfer, tx_bond and tx_unbound to store the decoded data in their tables
             // if the transaction has failed don't try to decode because the changes are not included and the data might not be correct
             if return_code.unwrap() == 0 {
-                // let data = tx
-                //     .data()
-                //     .ok_or(Error::InvalidTxData("tx has no data".into()))?;
                 let data = tx
                     .data(&cmt)
                     .ok_or(Error::InvalidTxData("tx has no data".into()))?;
