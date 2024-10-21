@@ -1,6 +1,11 @@
+use crate::error::Error;
+use crate::CHECKSUMS;
+use namada_core::masp::MaspTxId;
 use namada_sdk::tx::data::TxType;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::{env, fs};
+use namada_sdk::token::{Transfer, DenominatedAmount};
+use serde::Serialize;
 
 const CHECKSUMS_FILE_PATH_ENV: &str = "CHECKSUMS_FILE_PATH";
 const CHECKSUMS_REMOTE_URL_ENV: &str = "CHECKSUMS_REMOTE_URL";
@@ -10,7 +15,7 @@ pub fn tx_type_name(tx_type: &TxType) -> String {
     match tx_type {
         TxType::Raw => "Raw".to_string(),
         TxType::Wrapper(_) => "Wrapper".to_string(),
-        TxType::Decrypted(_) => "Decrypted".to_string(),
+        // TxType::Decrypted(_) => "Decrypted".to_string(),
         TxType::Protocol(_) => "Protocol".to_string(),
     }
 }
@@ -45,4 +50,44 @@ pub fn load_checksums() -> Result<HashMap<String, String>, crate::Error> {
     }
 
     Ok(checksums_map)
+}
+
+// Function to create a reversed map from the existing CHECKSUMS
+pub fn reverse_checksums() -> HashMap<String, String> {
+    let mut reverse_map = HashMap::new();
+    for (hash, tx_type) in CHECKSUMS.iter() {
+        reverse_map.insert(tx_type.clone(), hash.clone());
+    }
+    reverse_map
+}
+
+// Wrapper struct for serializing Transfer
+#[derive(Serialize)]
+pub struct TransferJson {
+    sources: BTreeMap<String, DenominatedAmount>,
+    targets: BTreeMap<String, DenominatedAmount>,
+    shielded_section_hash: Option<MaspTxId>, // If `MaspTxId` can also be converted to String
+}
+
+impl TransferJson {
+    pub fn from_transfer(transfer: Transfer) -> Result<Self, Error> {
+
+        let sources = transfer
+            .sources
+            .into_iter()
+            .map(|(key, value)| Ok((key.owner.to_string(), value)))
+            .collect::<Result<BTreeMap<String, DenominatedAmount>, Error>>()?;
+        
+        let targets = transfer
+            .targets
+            .into_iter()
+            .map(|(key, value)| Ok((key.owner.to_string(), value)))
+            .collect::<Result<BTreeMap<String, DenominatedAmount>, Error>>()?;
+        
+        Ok(TransferJson {
+            sources,
+            targets,
+            shielded_section_hash: transfer.shielded_section_hash,
+        })
+    }
 }
