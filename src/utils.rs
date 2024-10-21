@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::CHECKSUMS;
-use namada_sdk::masp::MaspTxId;
+use namada_core::masp::MaspTxId;
 use namada_sdk::tx::data::TxType;
 use std::collections::{HashMap, BTreeMap};
 use std::{env, fs};
