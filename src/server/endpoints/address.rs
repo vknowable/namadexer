@@ -5,14 +5,14 @@ use axum::{
 use tracing::info;
 
 use crate::{
-    server::{ServerState, TxInfo},
+    server::{ServerState, tx::TransferTxInfo},
     Error,
 };
 
 pub async fn get_txs_by_address(
     State(state): State<ServerState>,
     Path(address): Path<String>,
-) -> Result<Json<Option<Vec<TxInfo>>>, Error> {
+) -> Result<Json<Option<Vec<TransferTxInfo>>>, Error> {
     info!("calling /address/:{}", address);
 
     let rows = state.db.get_txs_by_address(&address).await?;
@@ -21,9 +21,9 @@ pub async fn get_txs_by_address(
         return Ok(Json(None));
     }
 
-    let mut response: Vec<TxInfo> = vec![];
+    let mut response: Vec<TransferTxInfo> = vec![];
     for row in rows {
-        let tx = TxInfo::try_from(row)?;
+        let tx = TransferTxInfo::try_from(row)?;
         response.push(tx);
     }
 

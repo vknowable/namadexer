@@ -85,9 +85,15 @@ pub struct HashID(
 );
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TxShort {
-    pub tx_type: String,
+pub struct WrapperTxShort {
     pub hash_id: HashID,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InnerTxShort {
+    pub hash_id: HashID,
+    pub wrapper_id: HashID,
+    pub code_type: String,
 }
 
 /// Relevant information regarding blocks
@@ -96,7 +102,8 @@ pub struct BlockInfo {
     pub block_id: HashID,
     pub header: Header,
     pub last_commit: Option<LastCommitInfo>,
-    pub tx_hashes: Vec<TxShort>,
+    pub wrapper_tx_hashes: Vec<WrapperTxShort>,
+    pub inner_tx_hashes: Vec<InnerTxShort>,
 }
 
 impl From<BlockInfo> for Header {
@@ -220,9 +227,17 @@ impl TryFrom<&Row> for BlockInfo {
 
         let last_commit = LastCommitInfo::read_from(row)?;
 
-        // tx hashes
-        let txs: Option<serde_json::Value> = row.try_get("txs")?;
-        let tx_hashes: Vec<TxShort> = if let Some(txs) = txs {
+        // wrapper tx hashes
+        let wrapper_txs: Option<serde_json::Value> = row.try_get("wrapper_txs")?;
+        let wrapper_tx_hashes: Vec<WrapperTxShort> = if let Some(txs) = wrapper_txs {
+            serde_json::from_value(txs)?
+        } else {
+            vec![]
+        };
+
+        // inner tx hashes
+        let inner_txs: Option<serde_json::Value> = row.try_get("inner_txs")?;
+        let inner_tx_hashes: Vec<InnerTxShort> = if let Some(txs) = inner_txs {
             serde_json::from_value(txs)?
         } else {
             vec![]
@@ -249,7 +264,8 @@ impl TryFrom<&Row> for BlockInfo {
             block_id: HashID(block_id),
             header,
             last_commit,
-            tx_hashes,
+            wrapper_tx_hashes,
+            inner_tx_hashes,
         })
     }
 }

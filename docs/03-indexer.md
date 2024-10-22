@@ -126,27 +126,47 @@ The `evidences` table contains the evidences of validators misbehavior. Only one
  validator_power    | text    |           | not null | 
 ```
 
-### Transactions
+### Inner and Wrapper Transactions
 
 The `transactions` table contains all the transactions that either encrypted or decrypted (defined by the `tx_type`). The decrypted data is then stored as a json object under `data`. The data is decoded in the indexer side before being stored.
 
 NOTE: it doesn't seem to be worth storing the encrypted data as no computation can be done over it. If a specific use case is mentioned it can be added.
 
-```
-\d shielded_expedition.transactions
+Transactions are split into two types (and two tables) -- inner and wrapper. Inner transactions correspond to the intuitive notion of a transaction, and include actions such as transfer, bond, vote_proposal, and so forth. Wrapper transactions package one or more inner transaction in a 'batch' with the corresponding fees. Batches may also be atomic.  
 
-              Table "shielded_expedition.transactions"
+An inner transaction cannot exist without a corresponding wrapper transaction.  
+
+A wrapper transaction will often contain only a single inner transaction. An common example of when you may see multiple inner transactions in a batch is when creating a bond through [Namadillo](https://github.com/anoma/namada-interface) -- if a `reveal_pk` transaction is needed, it will be sent together in a batch with the `bond` transaction.
+```
+\d shielded_expedition.inner_transactions
+
+              Table "shielded_expedition.inner_transactions"
          Column          |  Type   | Collation | Nullable | Default 
 -------------------------+---------+-----------+----------+---------
  hash                    | bytea   |           | not null | 
  block_id                | bytea   |           | not null | 
- tx_type                 | text    |           | not null | 
  wrapper_id              | bytea   |           |          | 
+ code                    | bytea   |           |          | 
+ code_type               | text    |           |          | 
+ memo                    | bigint  |           |          | 
+ data                    | json    |           |          | 
+ return_code             | integer |           |          | 
+
+```
+
+```
+\d shielded_expedition.wrapper_transactions
+
+              Table "shielded_expedition.wrapper_transactions"
+         Column          |  Type   | Collation | Nullable | Default 
+-------------------------+---------+-----------+----------+---------
+ hash                    | bytea   |           | not null | 
+ block_id                | bytea   |           | not null | 
+ fee_payer               | text    |           |          | 
  fee_amount_per_gas_unit | text    |           |          | 
  fee_token               | text    |           |          | 
  gas_limit_multiplier    | bigint  |           |          | 
- code                    | bytea   |           |          | 
- data                    | json    |           |          | 
+ atomic                  | boolean |           |          | 
  return_code             | integer |           |          | 
 
 ```
@@ -267,7 +287,7 @@ View "shielded_expedition.tx_reactivate_validator"
 ------------+------+-----------+----------+---------
  public_key | json |           |          | 
 
-    View "shielded_expedition.tx_transfert"
+    View "shielded_expedition.tx_transfer"
  Column | Type | Collation | Nullable | Default 
 --------+------+-----------+----------+---------
  source | text |           |          | 

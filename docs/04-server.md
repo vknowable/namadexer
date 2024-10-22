@@ -96,7 +96,7 @@ $ curl -H 'Content-Type: application/json' localhost:30303/account/updates/tnam1
 
 ### /address/:address
 
-Retrieve the all the transactions linked to this address (either as a target or source).
+Retrieve the all the transfers linked to this address (either as a target or source).
 
 ```
 $ curl -H 'Content-Type: application/json' localhost:30303/address/tnam1qqx0p2jus8hjvnxf7clqnn58gcredde02szr9d2r

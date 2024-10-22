@@ -29,20 +29,32 @@ pub fn get_create_block_table_query(network: &str) -> String {
     )
 }
 
-pub fn get_create_transactions_table_query(network: &str) -> String {
+pub fn get_create_inner_transactions_table_query(network: &str) -> String {
     format!(
-        "CREATE TABLE IF NOT EXISTS {}.transactions (
+        "CREATE TABLE IF NOT EXISTS {}.inner_transactions (
         hash BYTEA NOT NULL,
         block_id BYTEA NOT NULL,
-        tx_type TEXT NOT NULL,
         wrapper_id BYTEA,
-        fee_amount_per_gas_unit TEXT,
-        fee_token TEXT,
-        gas_limit_multiplier BIGINT,
         code BYTEA,
         code_type TEXT,
         memo BYTEA,
         data JSON,
+        return_code INTEGER
+    );",
+        network
+    )
+}
+
+pub fn get_create_wrapper_transactions_table_query(network: &str) -> String {
+    format!(
+        "CREATE TABLE IF NOT EXISTS {}.wrapper_transactions (
+        hash BYTEA NOT NULL,
+        block_id BYTEA NOT NULL,
+        fee_payer TEXT,
+        fee_amount_per_gas_unit TEXT,
+        fee_token TEXT,
+        gas_limit_multiplier BIGINT,
+        atomic BOOLEAN,
         return_code INTEGER
     );",
         network

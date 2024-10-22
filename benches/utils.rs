@@ -64,7 +64,7 @@ pub async fn save_blocks(
     checksums: &HashMap<String, String>,
 ) {
     for (block, result) in blocks.zip(results) {
-        db.save_block(block, result, checksums).await.unwrap();
+        db.save_block(block, result).await.unwrap();
     }
 }
 

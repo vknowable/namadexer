@@ -17,7 +17,7 @@ use crate::error::Error;
 pub mod blocks;
 pub mod tx;
 pub use blocks::BlockInfo;
-pub use tx::TxInfo;
+pub use tx::{InnerTxInfo, WrapperTxInfo};
 pub mod account;
 mod endpoints;
 pub mod shielded;
