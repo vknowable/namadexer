@@ -1,6 +1,10 @@
 # Namadexer
 
-Namadexer is an indexer for [Namada](https://github.com/anoma/namada).
+Namadexer is an indexer for [Namada](https://github.com/anoma/namada). The vast majority of the work was done by Zondax in 
+the [original Namadexer repo](https://github.com/Zondax/namadexer) (since archived) up until Namada version `v0.31.4`.  
+
+This fork attempts to bring it up-to-date with recent Namada versions. Due to the many changes in Namada transaction structure 
+since then (such as the introduction of batched transactions and changes in how transfers are represented in the protocol) this includes breaking changes to the DB model; most notably, the `transactions` table has been split into `inner_transactions` and `wrapper_transactions`.
 
 ## Overview
 
