@@ -728,8 +728,12 @@ impl Database {
 
     #[instrument(skip(self, block_id))]
     pub async fn block_by_id(&self, block_id: &[u8]) -> Result<Option<Row>, Error> {
-        let str = format!("SELECT b.*, txs FROM {0}.blocks b LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(t.hash, 'hex'), 'tx_type', t.tx_type)) AS txs FROM {0}.inner_transactions t GROUP BY t.block_id) t ON b.block_id = t.block_id WHERE b.block_id = $1;", self.network);
-
+        let str = format!("SELECT b.*, inner_txs, wrapper_txs FROM {0}.{BLOCKS_TABLE_NAME} b 
+            LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(it.hash, 'hex'), 'wrapper_id', encode(it.wrapper_id, 'hex'), 'code_type', it.code_type)) 
+            AS inner_txs FROM {0}.{INNER_TX_TABLE_NAME} it GROUP BY it.block_id) it ON b.block_id = it.block_id 
+            LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(wt.hash, 'hex'))) 
+            AS wrapper_txs FROM {0}.{WRAPPER_TX_TABLE_NAME} wt GROUP BY wt.block_id) wt ON b.block_id = wt.block_id 
+            WHERE b.block_id = $1;", self.network);
         query(&str)
             .bind(block_id)
             .fetch_optional(&*self.pool)
@@ -740,7 +744,12 @@ impl Database {
     /// Returns the block at `block_height` if present, otherwise returns an Error.
     #[instrument(skip(self))]
     pub async fn block_by_height(&self, block_height: u32) -> Result<Option<Row>, Error> {
-        let str = format!("SELECT b.*, txs FROM {0}.blocks b LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(t.hash, 'hex'), 'tx_type', t.tx_type)) AS txs FROM {0}.inner_transactions t GROUP BY t.block_id) t ON b.block_id = t.block_id WHERE b.header_height = $1;", self.network);
+        let str = format!("SELECT b.*, inner_txs, wrapper_txs FROM {0}.{BLOCKS_TABLE_NAME} b 
+            LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(it.hash, 'hex'), 'wrapper_id', encode(it.wrapper_id, 'hex'), 'code_type', it.code_type)) 
+            AS inner_txs FROM {0}.{INNER_TX_TABLE_NAME} it GROUP BY it.block_id) it ON b.block_id = it.block_id 
+            LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(wt.hash, 'hex'))) 
+            AS wrapper_txs FROM {0}.{WRAPPER_TX_TABLE_NAME} wt GROUP BY wt.block_id) wt ON b.block_id = wt.block_id 
+            WHERE b.header_height = $1;", self.network);
 
         query(&str)
             .bind(block_height as i32)
@@ -752,8 +761,12 @@ impl Database {
     #[instrument(skip(self))]
     /// Returns the latest block, otherwise returns an Error.
     pub async fn get_last_block(&self) -> Result<Row, Error> {
-        let str = format!("SELECT b.*, txs FROM {0}.blocks b LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(t.hash, 'hex'), 'tx_type', t.tx_type)) AS txs FROM {0}.inner_transactions t GROUP BY t.block_id) t ON b.block_id = t.block_id WHERE b.header_height = (SELECT MAX(header_height) FROM {0}.blocks);", self.network);
-
+        let str = format!("SELECT b.*, inner_txs, wrapper_txs FROM {0}.{BLOCKS_TABLE_NAME} b 
+            LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(it.hash, 'hex'), 'wrapper_id', encode(it.wrapper_id, 'hex'), 'code_type', it.code_type)) 
+            AS inner_txs FROM {0}.{INNER_TX_TABLE_NAME} it GROUP BY it.block_id) it ON b.block_id = it.block_id 
+            LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(wt.hash, 'hex'))) 
+            AS wrapper_txs FROM {0}.{WRAPPER_TX_TABLE_NAME} wt GROUP BY wt.block_id) wt ON b.block_id = wt.block_id 
+            WHERE b.header_height = (SELECT MAX(header_height) FROM {0}.{BLOCKS_TABLE_NAME});", self.network);
         // use query_one as the row matching max height is unique.
         query(&str)
             .fetch_one(&*self.pool)
@@ -793,11 +806,11 @@ impl Database {
     }
 
     #[instrument(skip(self))]
-    /// Returns transactions for a given source
+    /// Returns transfer transactions for a given source
     pub async fn get_txs_by_address(&self, address: &String) -> Result<Vec<Row>, Error> {
         // query for transaction with hash
         let str = format!(
-            "SELECT * FROM {}.{INNER_TX_TABLE_NAME} WHERE data->>'source' = $1 OR data->>'target' = $1;",
+            "SELECT * FROM {}.tx_transfer WHERE source = $1 OR target = $1;",
             self.network
         );
 
@@ -812,7 +825,7 @@ impl Database {
     /// Returns all the inner tx hashes for a block
     pub async fn get_tx_hashes_block(&self, hash: &[u8]) -> Result<Vec<Row>, Error> {
         // query for all tx hash that are in a block identified by the block_id
-        let str = format!("SELECT t.hash, t.tx_type FROM {0}.{BLOCKS_TABLE_NAME} b JOIN {0}.{INNER_TX_TABLE_NAME} t ON b.block_id = t.block_id WHERE b.block_id = $1;", self.network);
+        let str = format!("SELECT t.hash, t.code_type FROM {0}.{BLOCKS_TABLE_NAME} b JOIN {0}.{INNER_TX_TABLE_NAME} t ON b.block_id = t.block_id WHERE b.block_id = $1;", self.network);
 
         query(&str)
             .bind(hash)
@@ -826,7 +839,7 @@ impl Database {
     pub async fn get_shielded_tx(&self) -> Result<Vec<Row>, Error> {
         // query for transaction with hash
         let str = format!(
-            "SELECT * FROM {}.inner_transactions WHERE tx_type = 'Decrypted' AND (data ->> 'source' = '{MASP_ADDR}' OR data ->> 'target' = '{MASP_ADDR}')",
+            "SELECT * FROM {}.tx_transfer WHERE source = '{MASP_ADDR}' OR target = '{MASP_ADDR}';",
             self.network
         );
 
@@ -988,7 +1001,7 @@ impl Database {
 
     pub async fn vote_proposal_data(&self, proposal_id: i64) -> Result<Vec<Row>, Error> {
         let query = format!(
-            "SELECT data FROM {}.inner_transactions WHERE code = '\\xccdbe81f664ca6c2caa11426927093dc10ed95e75b3f2f45bffd8514fee47cd0' AND (data->>'id')::int = $1;",
+            "SELECT data FROM {}.inner_transactions WHERE code_type = 'tx_vote_proposal' AND (data->>'id')::int = $1;",
             self.network
         );
 
@@ -1045,7 +1058,7 @@ impl Database {
         num: &i32,
         offset: Option<&i32>,
     ) -> Result<Vec<Row>, Error> {
-        let str = format!("SELECT b.*, t.txs FROM {0}.blocks b LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(t.hash, 'hex'), 'tx_type', t.tx_type)) AS txs FROM {0}.inner_transactions t GROUP BY t.block_id) t ON b.block_id = t.block_id ORDER BY b.header_height DESC LIMIT {1} OFFSET {2};", self.network, num, offset.unwrap_or(&  0));
+        let str = format!("SELECT b.*, t.txs FROM {0}.blocks b LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(t.hash, 'hex'), 'code_type', t.code_type)) AS txs FROM {0}.inner_transactions t GROUP BY t.block_id) t ON b.block_id = t.block_id ORDER BY b.header_height DESC LIMIT {1} OFFSET {2};", self.network, num, offset.unwrap_or(&  0));
 
         // use query_one as the row matching max height is unique.
         query(&str)
