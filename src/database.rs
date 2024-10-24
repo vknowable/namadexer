@@ -696,6 +696,30 @@ impl Database {
 
         query(
             format!(
+                "
+                ALTER TABLE {}.wrapper_transactions ADD CONSTRAINT pk_wrapper_hash PRIMARY KEY (hash);
+            ",
+                self.network
+            )
+            .as_str(),
+        )
+        .execute(&*self.pool)
+        .await?;
+
+        query(
+            format!(
+                "
+                ALTER TABLE {}.inner_transactions ADD CONSTRAINT pk_inner_hash PRIMARY KEY (hash);
+            ",
+                self.network
+            )
+            .as_str(),
+        )
+        .execute(&*self.pool)
+        .await?;
+
+        query(
+            format!(
                 "CREATE UNIQUE INDEX ux_header_height ON {}.blocks (header_height);",
                 self.network
             )
