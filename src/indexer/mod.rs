@@ -18,6 +18,9 @@ use tokio::task::JoinHandle;
 use tracing::{info, instrument, warn};
 
 pub mod utils;
+pub mod tx;
+pub mod block_result;
+pub mod id;
 
 use super::database::Database;
 use super::error::Error;

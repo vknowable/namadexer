@@ -1,31 +1,10 @@
 use crate::queries::insert_block_query;
-use crate::{config::DatabaseConfig, error::Error, utils};
-use serde_json::json;
+use crate::{config::DatabaseConfig, error::Error};
 use strum::IntoEnumIterator;
 
-use namada_sdk::{
-    key::common::PublicKey,
-    account::{InitAccount, UpdateAccount},
-    borsh::BorshDeserialize,
-    governance::{InitProposalData, VoteProposalData},
-    tx::{
-        data::{
-            pgf::UpdateStewardCommission,
-            pos::{
-                BecomeValidator, Bond, CommissionChange, ConsensusKeyChange, MetaDataChange,
-                Redelegation, Unbond, Withdraw,
-            },
-            TxType,
-        },
-        Tx,
-    },
-    address::Address,
-    eth_bridge_pool::PendingTransfer,
-    token,
-
-};
+use namada_sdk::tx::{data::TxType, Tx};
+use namada_tx::{data::compute_inner_tx_hash, either::Either};
 use sqlx::postgres::{PgPool, PgPoolOptions, PgRow as Row};
-use sqlx::Row as TRow;
 use sqlx::{query, QueryBuilder, Transaction};
 use std::sync::Arc;
 use std::time::Duration;
@@ -44,14 +23,19 @@ use crate::{
 
 use crate::tables::{
     get_create_block_table_query, get_create_commit_signatures_table_query,
-    get_create_evidences_table_query, get_create_transactions_table_query,
+    get_create_evidences_table_query,
+    get_create_inner_transactions_table_query, get_create_wrapper_transactions_table_query,
 };
 use crate::views::{self, ViewType};
+use crate::indexer::tx::{decode_tx, insert_inner_txs, insert_wrapper_txs, WrapperTxDB, InnerTxDB};
+use crate::indexer::block_result::{BlockResult, TransactionExitStatus};
+use crate::indexer::id::Id;
 
 use metrics::{gauge, histogram, increment_counter};
 
 const BLOCKS_TABLE_NAME: &str = "blocks";
-const TX_TABLE_NAME: &str = "transactions";
+const WRAPPER_TX_TABLE_NAME: &str = "wrapper_transactions";
+const INNER_TX_TABLE_NAME: &str = "inner_transactions";
 
 // Max time to wait for a succesfull database connection
 const DATABASE_TIMEOUT: u64 = 60;
@@ -135,16 +119,15 @@ impl Database {
             .execute(&*self.pool)
             .await?;
 
-        query(get_create_transactions_table_query(&self.network).as_str())
+        query(get_create_inner_transactions_table_query(&self.network).as_str())
+            .execute(&*self.pool)
+            .await?;
+
+        query(get_create_wrapper_transactions_table_query(&self.network).as_str())
             .execute(&*self.pool)
             .await?;
 
         query(get_create_evidences_table_query(&self.network).as_str())
-            .execute(&*self.pool)
-            .await?;
-
-        // Alter table
-        query(&format!("ALTER TABLE {}.transactions ADD COLUMN IF NOT EXISTS code_type TEXT, ADD COLUMN IF NOT EXISTS  memo BYTEA; ", self.network))
             .execute(&*self.pool)
             .await?;
 
@@ -544,19 +527,19 @@ impl Database {
     /// Save all the transactions in txs, it is up to the caller to
     /// call sqlx_tx.commit().await?; for the changes to take place in
     /// database.
-    #[instrument(skip(txs, block_id, sqlx_tx, block_results, network))]
+    #[instrument(skip(wrapper_txs, block_id, sqlx_tx, raw_block_results, network))]
     async fn save_transactions<'a>(
-        txs: &[Vec<u8>],
+        wrapper_txs: &[Vec<u8>],
         block_id: &[u8],
         block_height: u64,
-        block_results: &block_results::Response,
+        raw_block_results: &block_results::Response,
         sqlx_tx: &mut Transaction<'a, sqlx::Postgres>,
         network: &str,
     ) -> Result<(), Error> {
         // use for metrics
         let instant = tokio::time::Instant::now();
 
-        if txs.is_empty() {
+        if wrapper_txs.is_empty() {
             let labels = [
                 ("bulk_insert", "transactions".to_string()),
                 ("status", "Ok".to_string()),
@@ -572,296 +555,110 @@ impl Database {
 
         debug!(message = "Saving transactions");
 
-        let mut query_builder: QueryBuilder<_> = QueryBuilder::new(format!(
-            "INSERT INTO {}.transactions(
-                    hash, 
-                    block_id, 
-                    tx_type,
-                    wrapper_id,
-                    fee_amount_per_gas_unit,
-                    fee_token,
-                    gas_limit_multiplier,
-                    code,
-                    code_type,
-                    memo,
-                    data,
-                    return_code
-                )",
-            network
-        ));
-
-        // this will holds tuples (hash, block_id, tx_type, fee_amount_per_gas_unit, fee_token, gas_limit_multiplier, code, data)
-        // in order to push txs.len at once in a single query.
+        // this will holds tx tuples
+        // in order to push wrapper_txs.len at once in a single query.
         // the limit for bind values in postgres is 65535 values, that means that
         // to hit that limit a block would need to have:
         // n_tx = 65535/8 = 8191
         // being 8 the number of columns.
-        let mut tx_values = Vec::with_capacity(txs.len());
+        let mut wrapper_tx_values = Vec::<WrapperTxDB>::with_capacity(wrapper_txs.len());
+        let mut inner_tx_values = Vec::<InnerTxDB>::new();
 
-        for t in txs.iter() {
-            let tx = Tx::try_from(t.as_slice()).map_err(|e| Error::InvalidTxData(e.to_string()))?;
+        let block_result = BlockResult::from(raw_block_results);
 
-            // TODO: this currently only supports the case where tx batch length is 1
-            // needs to be generalized to iterate over all tx commitments in a batch
-            let cmt = tx.first_commitments().unwrap().to_owned();
+        // for each wrapper tx ...
+        for t in wrapper_txs.iter() {
+            let wrapper_tx = Tx::try_from(t.as_slice()).map_err(|e| Error::InvalidTxData(e.to_string()))?;
+            let wrapper_id = wrapper_tx.header_hash().to_vec();
+            let wrapper_id_str = Id::Hash(hex::encode(&wrapper_id).to_lowercase());
+            let wrapper_return_code = match block_result.is_wrapper_tx_applied(&wrapper_id_str) {
+                TransactionExitStatus::Applied => Some(0),
+                TransactionExitStatus::Rejected => Some(1),
+            };
 
-            let mut code_type: String = "none".to_string();
+            // ... iterate over all inner txs
+            let commitments = wrapper_tx.commitments().to_owned();
+            for inner_tx in commitments.iter() {
 
-            let memo: Vec<u8> = tx.memo(&cmt).unwrap_or_default();
-            let mut txid_wrapper: Vec<u8> = vec![];
+                let memo: Vec<u8> = wrapper_tx.memo(&inner_tx).unwrap_or_default();
+                let code = wrapper_tx
+                    .get_section(&inner_tx.code_hash)
+                    .and_then(|s| s.code_sec())
+                    .map(|s| s.code.hash().0)
+                    .ok_or(Error::InvalidTxData("no code hash".into()))?;
 
-            let mut data_json: serde_json::Value = json!(null);
-            let mut return_code: Option<i32> = None;
+                let code_hex = hex::encode(code.as_slice());
+                let unknown_type = "unknown".to_string();
+                let type_tx = CHECKSUMS.get(&code_hex).unwrap_or(&unknown_type);
 
-            let hash_id = tx.header_hash().to_vec();
-            let hash_id_str = hex::encode(&hash_id);
+                let inner_hash = compute_inner_tx_hash(Some(&wrapper_tx.header_hash()), Either::Right(&inner_tx)).to_vec();
+                let inner_hash_str = Id::Hash(hex::encode(&inner_hash).to_lowercase());
+                let inner_return_code = match block_result.is_inner_tx_accepted(&wrapper_id_str, &inner_hash_str) {
+                    TransactionExitStatus::Applied => Some(0),
+                    TransactionExitStatus::Rejected => Some(1),
+                };
 
-            // Safe to use unwrap because if it is not present then something is broken.
-            let end_events = block_results.end_block_events.clone().unwrap();
-
-            // filter to get the matching event for the (wrapper) hash_id
-            let matching_event = end_events.iter().find(|event| {
-                event.attributes.iter().any(|attr| {
-                    attr.key_str().ok()
-                        .filter(|key| *key == "hash")
-                        .and_then(|_| attr.value_str().ok())
-                        .map(|value| value.to_ascii_lowercase() == hash_id_str)
-                        .unwrap_or(false)
-                })
-            });
-
-            // now for the event get its attribute and parse the return code
-            if let Some(event) = matching_event {
-                // Now, look for the "code" attribute in the found event
-                if let Some(code_attr) = event.attributes.iter().find(|attr| {
-                    attr.key_str().ok()
-                        .filter(|key| *key == "code")
-                        .is_some()
-                }) {
-                    // Parse the code value.
-                    // It could be possible to ignore the error by converting the result
-                    // to an Option<i32> but it is better to fail if the value is not a number.
-                    return_code = Some(code_attr.value_str()?.parse()?);
-                }
-            }
-
-            txid_wrapper = hash_id.clone();
-
-            let code = tx
-                .get_section(&cmt.code_hash)
-                .and_then(|s| s.code_sec())
-                .map(|s| s.code.hash().0)
-                .ok_or(Error::InvalidTxData("no code hash".into()))?;
-
-            let code_hex = hex::encode(code.as_slice());
-            let unknown_type = "unknown".to_string();
-            let type_tx = CHECKSUMS.get(&code_hex).unwrap_or(&unknown_type);
-
-            // decode tx_transfer, tx_bond and tx_unbound to store the decoded data in their tables
-            // if the transaction has failed don't try to decode because the changes are not included and the data might not be correct
-            if return_code.unwrap() == 0 {
-                let data = tx
-                    .data(&cmt)
+                let data = wrapper_tx
+                    .data(&inner_tx)
                     .ok_or(Error::InvalidTxData("tx has no data".into()))?;
 
-                code_type = type_tx.to_string();
+                let code_type = type_tx.to_string();
 
                 info!("Saving {} transaction", type_tx);
 
-                // decode tx_transfer, tx_bond and tx_unbound to store the decoded data in their tables
-                match type_tx.as_str() {
-                    "tx_transfer" => {
-                        let transfer = token::Transfer::try_from_slice(&data[..])?;
-                        let transfer_json = utils::TransferJson::from_transfer(transfer)?;
-                        data_json = serde_json::to_value(transfer_json)?;
-                    }
-                    "tx_bond" => {
-                        let bond = Bond::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(bond)?;
-                    }
-                    "tx_unbond" => {
-                        let unbond = Unbond::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(unbond)?;
-                    }
-                    // this is an ethereum transaction
-                    "tx_bridge_pool" => {
-                        // Only TransferToEthereum type is supported at the moment by namada and us.
-                        let tx_bridge = PendingTransfer::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_bridge)?;
-                    }
-                    "tx_vote_proposal" => {
-                        let tx_vote_proposal = VoteProposalData::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_vote_proposal)?;
-                    }
-                    "tx_reveal_pk" => {
-                        // nothing to do here, only check that data is a valid publicKey
-                        // otherwise this transaction must not make it into
-                        // the database.
-                        let tx_reveal_pk = PublicKey::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_reveal_pk)?;
-                    }
-                    "tx_resign_steward" => {
-                        // Not much to do, just, check that the address this transactions
-                        // holds in the data field is correct, or at least parsed succesfully.
-                        let tx_resign_steward = Address::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_resign_steward)?;
-                    }
-                    "tx_update_steward_commission" => {
-                        // Not much to do, just, check that the address this transactions
-                        // holds in the data field is correct, or at least parsed succesfully.
-                        let tx_update_steward_commission =
-                            UpdateStewardCommission::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_update_steward_commission)?;
-                    }
-                    "tx_init_account" => {
-                        // check that transaction can be parsed
-                        // before inserting it into database.
-                        // later accounts could be updated using
-                        // tx_update_account, however there is not way
-                        // so far to link those transactions to this.
-                        let tx_init_account = InitAccount::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_init_account)?;
-                    }
-                    "tx_update_account" => {
-                        // check that transaction can be parsed
-                        // before storing it into database
-                        let tx_update_account = UpdateAccount::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_update_account)?;
-                    }
-                    "tx_ibc" => {
-                        info!("we do not handle ibc transaction yet");
-                        data_json = serde_json::to_value(hex::encode(&data[..]))?;
-                    }
-                    "tx_become_validator" => {
-                        let tx_become_validator = BecomeValidator::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_become_validator)?;
-                    }
-                    "tx_change_consensus_key" => {
-                        let tx_change_consensus_key =
-                            ConsensusKeyChange::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_change_consensus_key)?;
-                    }
-                    "tx_change_validator_commission" => {
-                        let tx_change_validator_commission =
-                            CommissionChange::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_change_validator_commission)?;
-                    }
-                    "tx_change_validator_metadata" => {
-                        let tx_change_validator_metadata =
-                            MetaDataChange::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_change_validator_metadata)?;
-                    }
-                    "tx_claim_rewards" => {
-                        let tx_claim_rewards = Withdraw::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_claim_rewards)?;
-                    }
-                    "tx_deactivate_validator" => {
-                        let tx_deactivate_validator = Address::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_deactivate_validator)?;
-                    }
-                    "tx_init_proposal" => {
-                        let tx_init_proposal = InitProposalData::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_init_proposal)?;
-                    }
-                    "tx_reactivate_validator" => {
-                        let tx_reactivate_validator = Address::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_reactivate_validator)?;
-                    }
-                    "tx_unjail_validator" => {
-                        let tx_unjail_validator = Address::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_unjail_validator)?;
-                    }
-                    "tx_redelegate" => {
-                        let tx_redelegate = Redelegation::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_redelegate)?;
-                    }
-                    "tx_withdraw" => {
-                        let tx_withdraw = Withdraw::try_from_slice(&data[..])?;
-                        data_json = serde_json::to_value(tx_withdraw)?;
-                    }
-                    _ => {}
-                }
-            }
-            // }
+                let data_json = decode_tx(type_tx, &data)?;
 
-            // values only set if transaction type is Wrapper
+                inner_tx_values.push(InnerTxDB {
+                    hash: inner_hash, // PLACEHOLDER
+                    block_id: block_id.to_vec(),
+                    wrapper_id: wrapper_id.clone(),
+                    code,
+                    code_type,
+                    memo,
+                    data: data_json,
+                    return_code: inner_return_code,
+                });
+            }
+
+            // index the remaining wrapper tx info
+            let atomic = wrapper_tx.header().atomic;
+            let mut fee_payer: Option<String> = None;
             let mut fee_amount_per_gas_unit: Option<String> = None;
             let mut fee_token: Option<String> = None;
-            let mut gas_limit_multiplier: Option<i64> = None;
-            if let TxType::Wrapper(txw) = tx.header().tx_type {
+            let mut fee_gas_limit_multiplier: Option<i64> = None;
+            if let TxType::Wrapper(txw) = wrapper_tx.header().tx_type {
                 fee_amount_per_gas_unit = Some(txw.fee.amount_per_gas_unit.to_string_precise());
                 fee_token = Some(txw.fee.token.to_string());
                 let multiplier: u64 = txw.gas_limit.into();
                 // WARNING! converting into i64 might ended up changing the value but there is little
                 // chance that he goes higher than i64 max value
-                gas_limit_multiplier = Some(multiplier as i64);
+                fee_gas_limit_multiplier = Some(multiplier as i64);
+                fee_payer = Some(txw.fee_payer().to_string());
             }
 
-            tx_values.push((
-                hash_id,
-                block_id.to_vec(),
-                utils::tx_type_name(&tx.header.tx_type),
-                txid_wrapper,
+            wrapper_tx_values.push(WrapperTxDB {
+                hash: wrapper_id,
+                block_id: block_id.to_vec(),
+                fee_payer,
                 fee_amount_per_gas_unit,
                 fee_token,
-                gas_limit_multiplier,
-                code,
-                code_type,
-                memo,
-                data_json,
-                return_code,
-            ));
+                fee_gas_limit_multiplier,
+                atomic,
+                return_code: wrapper_return_code,
+            });
         }
 
-        let num_transactions = tx_values.len();
-
-        // bulk insert to speed-up this
-        // there might be limits regarding the number of parameter
-        // but number of transaction is low in comparisson with
-        // postgres limit
-        let res = query_builder
-            .push_values(
-                tx_values.into_iter(),
-                |mut b,
-                 (
-                    hash,
-                    block_id,
-                    tx_type,
-                    wrapper_id,
-                    fee_amount_per_gas_unit,
-                    fee_token,
-                    fee_gas_limit_multiplier,
-                    code,
-                    code_type,
-                    memo,
-                    data,
-                    return_code,
-                )| {
-                    b.push_bind(hash)
-                        .push_bind(block_id)
-                        .push_bind(tx_type)
-                        .push_bind(wrapper_id)
-                        .push_bind(fee_amount_per_gas_unit)
-                        .push_bind(fee_token)
-                        .push_bind(fee_gas_limit_multiplier)
-                        .push_bind(code)
-                        .push_bind(code_type)
-                        .push_bind(memo)
-                        .push_bind(data)
-                        .push_bind(return_code);
-                },
-            )
-            .build()
-            .execute(&mut *sqlx_tx)
-            .await
-            .map(|_| ())
-            .map_err(Error::from);
-
+        let res_wrapper = insert_wrapper_txs(&wrapper_tx_values, sqlx_tx, network).await;
+        let res_inner = insert_inner_txs(&inner_tx_values, sqlx_tx, network).await;
         let dur = instant.elapsed();
 
         let mut status = "Ok".to_string();
-        if let Err(e) = &res {
-            status = e.to_string();
+        if res_wrapper.is_err() || res_inner.is_err() {
+            if let Err(e) = &res_wrapper {
+                status = e.to_string();
+            } else if let Err(e) = &res_inner {
+                status = e.to_string();
+            }
         }
 
         let labels = [
@@ -869,10 +666,18 @@ impl Database {
             ("status", status),
         ];
 
+        let num_inner = inner_tx_values.len();
         histogram!(DB_SAVE_TXS_DURATION, dur.as_secs_f64() * 1000.0, &labels);
-        histogram!(DB_SAVE_TXS_BATCH_SIZE, num_transactions as f64, &labels);
+        histogram!(DB_SAVE_TXS_BATCH_SIZE, num_inner as f64, &labels);
 
-        res
+        // Return the first encountered error, if any
+        if res_wrapper.is_err() {
+            return res_wrapper;
+        }
+        if res_inner.is_err() {
+            return res_inner;
+        }
+        res_wrapper
     }
 
     pub async fn create_indexes(&self) -> Result<(), Error> {
@@ -881,6 +686,30 @@ impl Database {
             format!(
                 "
                 ALTER TABLE {}.blocks ADD CONSTRAINT pk_block_id PRIMARY KEY (block_id);
+            ",
+                self.network
+            )
+            .as_str(),
+        )
+        .execute(&*self.pool)
+        .await?;
+
+        query(
+            format!(
+                "
+                ALTER TABLE {}.wrapper_transactions ADD CONSTRAINT pk_wrapper_hash PRIMARY KEY (hash);
+            ",
+                self.network
+            )
+            .as_str(),
+        )
+        .execute(&*self.pool)
+        .await?;
+
+        query(
+            format!(
+                "
+                ALTER TABLE {}.inner_transactions ADD CONSTRAINT pk_inner_hash PRIMARY KEY (hash);
             ",
                 self.network
             )
@@ -910,7 +739,11 @@ impl Database {
         // .execute(&*self.pool)
         // .await?;
 
-        query(format!("ALTER TABLE {0}.transactions ADD CONSTRAINT fk_block_id FOREIGN KEY (block_id) REFERENCES {0}.blocks (block_id);", self.network).as_str())
+        query(format!("ALTER TABLE {0}.wrapper_transactions ADD CONSTRAINT fk_block_id FOREIGN KEY (block_id) REFERENCES {0}.blocks (block_id);", self.network).as_str())
+            .execute(&*self.pool)
+            .await?;
+
+        query(format!("ALTER TABLE {0}.inner_transactions ADD CONSTRAINT fk_wrapper_id FOREIGN KEY (wrapper_id) REFERENCES {0}.wrapper_transactions (hash);", self.network).as_str())
             .execute(&*self.pool)
             .await?;
 
@@ -919,8 +752,12 @@ impl Database {
 
     #[instrument(skip(self, block_id))]
     pub async fn block_by_id(&self, block_id: &[u8]) -> Result<Option<Row>, Error> {
-        let str = format!("SELECT b.*, txs FROM {0}.blocks b LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(t.hash, 'hex'), 'tx_type', t.tx_type)) AS txs FROM {0}.transactions t GROUP BY t.block_id) t ON b.block_id = t.block_id WHERE b.block_id = $1;", self.network);
-
+        let str = format!("SELECT b.*, inner_txs, wrapper_txs FROM {0}.{BLOCKS_TABLE_NAME} b 
+            LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(it.hash, 'hex'), 'wrapper_id', encode(it.wrapper_id, 'hex'), 'code_type', it.code_type)) 
+            AS inner_txs FROM {0}.{INNER_TX_TABLE_NAME} it GROUP BY it.block_id) it ON b.block_id = it.block_id 
+            LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(wt.hash, 'hex'))) 
+            AS wrapper_txs FROM {0}.{WRAPPER_TX_TABLE_NAME} wt GROUP BY wt.block_id) wt ON b.block_id = wt.block_id 
+            WHERE b.block_id = $1;", self.network);
         query(&str)
             .bind(block_id)
             .fetch_optional(&*self.pool)
@@ -931,7 +768,12 @@ impl Database {
     /// Returns the block at `block_height` if present, otherwise returns an Error.
     #[instrument(skip(self))]
     pub async fn block_by_height(&self, block_height: u32) -> Result<Option<Row>, Error> {
-        let str = format!("SELECT b.*, txs FROM {0}.blocks b LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(t.hash, 'hex'), 'tx_type', t.tx_type)) AS txs FROM {0}.transactions t GROUP BY t.block_id) t ON b.block_id = t.block_id WHERE b.header_height = $1;", self.network);
+        let str = format!("SELECT b.*, inner_txs, wrapper_txs FROM {0}.{BLOCKS_TABLE_NAME} b 
+            LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(it.hash, 'hex'), 'wrapper_id', encode(it.wrapper_id, 'hex'), 'code_type', it.code_type)) 
+            AS inner_txs FROM {0}.{INNER_TX_TABLE_NAME} it GROUP BY it.block_id) it ON b.block_id = it.block_id 
+            LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(wt.hash, 'hex'))) 
+            AS wrapper_txs FROM {0}.{WRAPPER_TX_TABLE_NAME} wt GROUP BY wt.block_id) wt ON b.block_id = wt.block_id 
+            WHERE b.header_height = $1;", self.network);
 
         query(&str)
             .bind(block_height as i32)
@@ -943,8 +785,12 @@ impl Database {
     #[instrument(skip(self))]
     /// Returns the latest block, otherwise returns an Error.
     pub async fn get_last_block(&self) -> Result<Row, Error> {
-        let str = format!("SELECT b.*, txs FROM {0}.blocks b LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(t.hash, 'hex'), 'tx_type', t.tx_type)) AS txs FROM {0}.transactions t GROUP BY t.block_id) t ON b.block_id = t.block_id WHERE b.header_height = (SELECT MAX(header_height) FROM {0}.blocks);", self.network);
-
+        let str = format!("SELECT b.*, inner_txs, wrapper_txs FROM {0}.{BLOCKS_TABLE_NAME} b 
+            LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(it.hash, 'hex'), 'wrapper_id', encode(it.wrapper_id, 'hex'), 'code_type', it.code_type)) 
+            AS inner_txs FROM {0}.{INNER_TX_TABLE_NAME} it GROUP BY it.block_id) it ON b.block_id = it.block_id 
+            LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(wt.hash, 'hex'))) 
+            AS wrapper_txs FROM {0}.{WRAPPER_TX_TABLE_NAME} wt GROUP BY wt.block_id) wt ON b.block_id = wt.block_id 
+            WHERE b.header_height = (SELECT MAX(header_height) FROM {0}.{BLOCKS_TABLE_NAME});", self.network);
         // use query_one as the row matching max height is unique.
         query(&str)
             .fetch_one(&*self.pool)
@@ -968,11 +814,11 @@ impl Database {
     }
 
     #[instrument(skip(self))]
-    /// Returns Transaction identified by hash
+    /// Returns inner transaction identified by hash
     pub async fn get_tx(&self, hash: &[u8]) -> Result<Option<Row>, Error> {
         // query for transaction with hash
         let str = format!(
-            "SELECT * FROM {}.{TX_TABLE_NAME} WHERE hash=$1",
+            "SELECT * FROM {}.{INNER_TX_TABLE_NAME} WHERE hash=$1",
             self.network
         );
 
@@ -984,11 +830,11 @@ impl Database {
     }
 
     #[instrument(skip(self))]
-    /// Returns Transaction identified by hash
+    /// Returns transfer transactions for a given source
     pub async fn get_txs_by_address(&self, address: &String) -> Result<Vec<Row>, Error> {
         // query for transaction with hash
         let str = format!(
-            "SELECT * FROM {}.{TX_TABLE_NAME} WHERE data->>'source' = $1 OR data->>'target' = $1;",
+            "SELECT * FROM {}.tx_transfer WHERE source = $1 OR target = $1;",
             self.network
         );
 
@@ -1000,10 +846,10 @@ impl Database {
     }
 
     #[instrument(skip(self))]
-    /// Returns all the tx hashes for a block
+    /// Returns all the inner tx hashes for a block
     pub async fn get_tx_hashes_block(&self, hash: &[u8]) -> Result<Vec<Row>, Error> {
         // query for all tx hash that are in a block identified by the block_id
-        let str = format!("SELECT t.hash, t.tx_type FROM {0}.{BLOCKS_TABLE_NAME} b JOIN {0}.{TX_TABLE_NAME} t ON b.block_id = t.block_id WHERE b.block_id = $1;", self.network);
+        let str = format!("SELECT t.hash, t.code_type FROM {0}.{BLOCKS_TABLE_NAME} b JOIN {0}.{INNER_TX_TABLE_NAME} t ON b.block_id = t.block_id WHERE b.block_id = $1;", self.network);
 
         query(&str)
             .bind(hash)
@@ -1017,7 +863,7 @@ impl Database {
     pub async fn get_shielded_tx(&self) -> Result<Vec<Row>, Error> {
         // query for transaction with hash
         let str = format!(
-            "SELECT * FROM {}.transactions WHERE tx_type = 'Decrypted' AND (data ->> 'source' = '{MASP_ADDR}' OR data ->> 'target' = '{MASP_ADDR}')",
+            "SELECT * FROM {}.tx_transfer WHERE source = '{MASP_ADDR}' OR target = '{MASP_ADDR}';",
             self.network
         );
 
@@ -1071,7 +917,7 @@ impl Database {
         let to_query = format!(
             "
             SELECT COALESCE(ARRAY_AGG(data->>'threshold' ORDER BY data->>'addr' ASC), ARRAY[]::text[]) AS thresholds
-            FROM {}.transactions
+            FROM {}.inner_transactions
             WHERE code = '\\x70f91d4f778d05d40c5a56490ced906b016e4b7a2a2ef5ff0ac0541ff28c5a22' AND data->>'addr' = $1 GROUP BY data->>'addr';
             ",
             self.network
@@ -1162,7 +1008,7 @@ impl Database {
         let to_query = format!(
             "
             SELECT ARRAY_AGG(data->>'public_keys')
-            FROM {}.transactions
+            FROM {}.inner_transactions
             WHERE code = '\\x70f91d4f778d05d40c5a56490ced906b016e4b7a2a2ef5ff0ac0541ff28c5a22' AND data->>'addr' = $1;
         ",
             self.network,
@@ -1179,7 +1025,7 @@ impl Database {
 
     pub async fn vote_proposal_data(&self, proposal_id: i64) -> Result<Vec<Row>, Error> {
         let query = format!(
-            "SELECT data FROM {}.transactions WHERE code = '\\xccdbe81f664ca6c2caa11426927093dc10ed95e75b3f2f45bffd8514fee47cd0' AND (data->>'id')::int = $1;",
+            "SELECT data FROM {}.inner_transactions WHERE code_type = 'tx_vote_proposal' AND (data->>'id')::int = $1;",
             self.network
         );
 
@@ -1236,7 +1082,7 @@ impl Database {
         num: &i32,
         offset: Option<&i32>,
     ) -> Result<Vec<Row>, Error> {
-        let str = format!("SELECT b.*, t.txs FROM {0}.blocks b LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(t.hash, 'hex'), 'tx_type', t.tx_type)) AS txs FROM {0}.transactions t GROUP BY t.block_id) t ON b.block_id = t.block_id ORDER BY b.header_height DESC LIMIT {1} OFFSET {2};", self.network, num, offset.unwrap_or(&  0));
+        let str = format!("SELECT b.*, t.txs FROM {0}.blocks b LEFT JOIN (SELECT block_id, JSON_AGG(JSON_BUILD_OBJECT('hash_id', encode(t.hash, 'hex'), 'code_type', t.code_type)) AS txs FROM {0}.inner_transactions t GROUP BY t.block_id) t ON b.block_id = t.block_id ORDER BY b.header_height DESC LIMIT {1} OFFSET {2};", self.network, num, offset.unwrap_or(&  0));
 
         // use query_one as the row matching max height is unique.
         query(&str)

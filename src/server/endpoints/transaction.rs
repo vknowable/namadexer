@@ -5,7 +5,7 @@ use axum::{
 use tracing::info;
 
 use crate::{
-    server::{shielded, ServerState, TxInfo},
+    server::{shielded, ServerState, InnerTxInfo, WrapperTxInfo},
     Error,
 };
 
@@ -14,7 +14,7 @@ use sqlx::Row as TRow;
 pub async fn get_tx_by_hash(
     State(state): State<ServerState>,
     Path(hash): Path<String>,
-) -> Result<Json<Option<TxInfo>>, Error> {
+) -> Result<Json<Option<InnerTxInfo>>, Error> {
     info!("calling /tx/:tx_hash{}", hash);
 
     let hash = hex::decode(hash)?;
@@ -23,7 +23,7 @@ pub async fn get_tx_by_hash(
     let Some(row) = row else {
         return Ok(Json(None));
     };
-    let tx = TxInfo::try_from(row)?;
+    let tx = InnerTxInfo::try_from(row)?;
 
     Ok(Json(Some(tx)))
 }
