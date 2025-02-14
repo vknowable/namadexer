@@ -9,3 +9,4 @@ checksums.*
 config/Settings.toml
 MakePG
 .vscode
+/config/Settings.toml
