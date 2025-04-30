@@ -15,6 +15,7 @@ path = "src/bin/indexer.rs"
 [dependencies]
 getrandom = { version = "0.3" }
 async-trait = "0.1.86"
+bimap = { version = "0.6.3", features = ["serde"] }
 namada_core = { git = "https://github.com/anoma/namada", version = "0.149.1" }
 namada_sdk = { git = "https://github.com/anoma/namada", version = "0.149.1", default-features = false, features = ["std", "async-send", "download-params"] }
 namada_tx = { git = "https://github.com/anoma/namada", version = "0.149.1" }

@@ -1,3 +1,4 @@
+use crate::checksums::Checksums;
 use crate::queries::insert_block_query;
 use crate::{config::DatabaseConfig, error::Error};
 use strum::IntoEnumIterator;
@@ -16,7 +17,7 @@ use tendermint_rpc::endpoint::block_results;
 use tracing::{debug, info, instrument};
 
 use crate::{
-    CHECKSUMS, DB_SAVE_BLOCK_COUNTER, DB_SAVE_BLOCK_DURATION, DB_SAVE_COMMIT_SIG_BATCH_SIZE,
+    DB_SAVE_BLOCK_COUNTER, DB_SAVE_BLOCK_DURATION, DB_SAVE_COMMIT_SIG_BATCH_SIZE,
     DB_SAVE_COMMIT_SIG_DURATION, DB_SAVE_EVDS_BATCH_SIZE, DB_SAVE_EVDS_DURATION,
     DB_SAVE_TXS_BATCH_SIZE, DB_SAVE_TXS_DURATION, INDEXER_LAST_SAVE_BLOCK_HEIGHT, MASP_ADDR,
 };
@@ -104,7 +105,7 @@ impl Database {
     /// and contain useful information about transactions.
     /// - `evidences` Where block's evidence data is stored.
     #[instrument(skip(self))]
-    pub async fn create_tables(&self) -> Result<(), Error> {
+    pub async fn create_tables(&self, checksums: &Checksums) -> Result<(), Error> {
         info!("Creating tables if they don't exist");
 
         query(&format!("CREATE SCHEMA IF NOT EXISTS {}", self.network))
@@ -141,7 +142,7 @@ impl Database {
 
         // Create transaction views
         for view in ViewType::iter() {
-            let create_query = views::get_create_view_query(&self.network, &view);
+            let create_query = views::get_create_view_query(&self.network, &view, checksums);
             query(create_query.as_str())
                 .execute(&*self.pool)
                 .await?;
@@ -158,6 +159,7 @@ impl Database {
         block_results: &block_results::Response,
         sqlx_tx: &mut Transaction<'a, sqlx::Postgres>,
         network: &str,
+        checksums: &Checksums,
     ) -> Result<(), Error> {
         // let mut query_builder: QueryBuilder<_> = QueryBuilder::new(insert_block_query(network));
 
@@ -253,6 +255,7 @@ impl Database {
             block_results,
             sqlx_tx,
             network,
+            checksums,
         )
         .await?;
 
@@ -265,6 +268,7 @@ impl Database {
         &self,
         block: &Block,
         block_results: &block_results::Response,
+        checksums: &Checksums,
     ) -> Result<(), Error> {
         let instant = tokio::time::Instant::now();
         // Lets use postgres transaction internally for 2 reasons:
@@ -276,7 +280,7 @@ impl Database {
         // succeeded.
         let mut sqlx_tx = self.transaction().await?;
 
-        Self::save_block_impl(block, block_results, &mut sqlx_tx, self.network.as_str()).await?;
+        Self::save_block_impl(block, block_results, &mut sqlx_tx, self.network.as_str(), checksums).await?;
 
         let res = sqlx_tx.commit().await.map_err(Error::from);
 
@@ -416,8 +420,9 @@ impl Database {
         block_results: &block_results::Response,
         sqlx_tx: &mut Transaction<'a, sqlx::Postgres>,
         network: &str,
+        checksums: &Checksums,
     ) -> Result<(), Error> {
-        Self::save_block_impl(block, block_results, sqlx_tx, network).await
+        Self::save_block_impl(block, block_results, sqlx_tx, network, checksums).await
     }
 
     /// Save all the evidences in the list, it is up to the caller to
@@ -535,6 +540,7 @@ impl Database {
         raw_block_results: &block_results::Response,
         sqlx_tx: &mut Transaction<'a, sqlx::Postgres>,
         network: &str,
+        checksums: &Checksums,
     ) -> Result<(), Error> {
         // use for metrics
         let instant = tokio::time::Instant::now();
@@ -589,7 +595,8 @@ impl Database {
 
                 let code_hex = hex::encode(code.as_slice());
                 let unknown_type = "unknown".to_string();
-                let type_tx = CHECKSUMS.get(&code_hex).unwrap_or(&unknown_type);
+                let type_tx = checksums.get_name_by_id(&code_hex).unwrap_or(unknown_type);
+                println!("type_tx: {:?}", type_tx);
 
                 let inner_hash = compute_inner_tx_hash(Some(&wrapper_tx.header_hash()), Either::Right(&inner_tx)).to_vec();
                 let inner_hash_str = Id::Hash(hex::encode(&inner_hash).to_lowercase());
@@ -606,7 +613,7 @@ impl Database {
 
                 info!("Saving {} transaction", type_tx);
 
-                let data_json = decode_tx(type_tx, &data)?;
+                let data_json = decode_tx(&type_tx, &data)?;
 
                 inner_tx_values.push(InnerTxDB {
                     hash: inner_hash, // PLACEHOLDER

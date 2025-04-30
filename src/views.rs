@@ -1,4 +1,4 @@
-use crate::utils::reverse_checksums;
+use crate::checksums::Checksums;
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use strum_macros::EnumIter;
@@ -250,20 +250,18 @@ pub fn get_drop_view_query(network: &str, view_type: &ViewType) -> String {
 }
 
 // Generate a CREATE VIEW query
-pub fn get_create_view_query(network: &str, view_type: &ViewType) -> String {
+pub fn get_create_view_query(network: &str, view_type: &ViewType, checksums: &Checksums) -> String {
     let view_name = get_view_name(view_type);
 
     // Retrieve the query template
     if let Some(query_template) = QUERY_TEMPLATES.get(view_type) {
-        if let Some(code) = reverse_checksums().get(view_name) {
-
+        if let Some(code) = checksums.get_id_by_name(view_name) {
             let query_body = query_template
                 .replace("{network}", network)
-                .replace("{code}", code);
+                .replace("{code}", code.as_str());
 
             return format!("CREATE OR REPLACE VIEW {network}.{} AS {}", view_name, query_body);
         }
     }
-    
     String::new() // Return empty string if no query template or checksum is found
 }
