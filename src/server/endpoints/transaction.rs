@@ -5,7 +5,7 @@ use axum::{
 use tracing::info;
 
 use crate::{
-    server::{shielded, ServerState, InnerTxInfo, WrapperTxInfo},
+    server::{shielded, ServerState, InnerTxInfo},
     Error,
 };
 
