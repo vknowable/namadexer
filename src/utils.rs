@@ -1,12 +1,6 @@
-use crate::CHECKSUMS;
-
-use namada_sdk::tx::data::TxType;
-use std::collections::HashMap;
-use std::{env, fs};
-
-const CHECKSUMS_FILE_PATH_ENV: &str = "CHECKSUMS_FILE_PATH";
-const CHECKSUMS_REMOTE_URL_ENV: &str = "CHECKSUMS_REMOTE_URL";
-const CHECKSUMS_DEFAULT_PATH: &str = "checksums.json";
+use namada_sdk::{chain::BlockHeight, hash::Hash, queries::RPC, storage::Key, tx::data::TxType};
+use tendermint_rpc::HttpClient;
+use crate::checksums::Checksums;
 
 pub fn tx_type_name(tx_type: &TxType) -> String {
     match tx_type {
@@ -16,43 +10,50 @@ pub fn tx_type_name(tx_type: &TxType) -> String {
     }
 }
 
-pub fn load_checksums() -> Result<HashMap<String, String>, crate::Error> {
-    let checksums_file_path = env::var(CHECKSUMS_FILE_PATH_ENV);
-    let checksums_remote_url = env::var(CHECKSUMS_REMOTE_URL_ENV);
-
-    let checksums = match (checksums_file_path, checksums_remote_url) {
-        (Ok(path), _) => fs::read_to_string(path)?,
-        (_, Ok(url)) => ureq::get(&url)
-            .call()
-            .map_err(|e| crate::Error::Generic(Box::new(e)))?
-            .into_string()?,
-        _ => fs::read_to_string(CHECKSUMS_DEFAULT_PATH)?,
-    };
-
-    let json: serde_json::Value = serde_json::from_str(&checksums)?;
-    let obj = json.as_object().ok_or(crate::Error::InvalidChecksum)?;
-
-    let mut checksums_map = HashMap::new();
-    for value in obj.iter() {
-        let hash = value
-            .1
-            .as_str()
-            .ok_or(crate::Error::InvalidChecksum)?
-            .split('.')
-            .collect::<Vec<&str>>()[1];
-        let type_tx = value.0.split('.').collect::<Vec<&str>>()[0];
-
-        checksums_map.insert(hash.to_string(), type_tx.to_string());
+pub async fn fetch_checksums_from_node(client: &HttpClient) -> Result<Checksums, crate::Error> {
+    let mut checksums = Checksums::default();
+    for code_path in Checksums::code_paths() {
+        let code = query_tx_code_hash(&client, &code_path)
+            .await
+            .unwrap_or_else(|| {
+                panic!("{} must be defined in namada storage.", code_path)
+            });
+        checksums.add(code_path, code.to_lowercase());
     }
-
-    Ok(checksums_map)
+    Ok(checksums)
 }
 
-// Function to create a reversed map from the existing CHECKSUMS
-pub fn reverse_checksums() -> HashMap<String, String> {
-    let mut reverse_map = HashMap::new();
-    for (hash, tx_type) in CHECKSUMS.iter() {
-        reverse_map.insert(tx_type.clone(), hash.clone());
+async fn query_tx_code_hash(
+    client: &HttpClient,
+    tx_code_path: &str,
+) -> Option<String> {
+    let storage_key = Key::wasm_hash(tx_code_path);
+    let tx_code_res =
+        query_storage_bytes(client, &storage_key, None).await.ok()?;
+    if let Some(tx_code_bytes) = tx_code_res {
+        let tx_code =
+            Hash::try_from(&tx_code_bytes[..]).expect("Invalid code hash");
+        Some(tx_code.to_string())
+    } else {
+        None
     }
-    reverse_map
+}
+
+pub async fn query_storage_bytes(
+    client: &HttpClient,
+    key: &Key,
+    height: Option<BlockHeight>,
+) -> Result<Option<Vec<u8>>, crate::Error> {
+    match RPC.shell().storage_value(client, None, height, false, key).await {
+        Ok(value) => {
+            if value.data.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(value.data))
+            }
+        }
+        Err(e) => {
+            Err(crate::Error::Generic(Box::new(e)))
+        }
+    }
 }

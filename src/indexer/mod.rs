@@ -1,4 +1,5 @@
 use crate::config::IndexerConfig;
+use crate::checksums::Checksums;
 use futures::stream::StreamExt;
 use futures_util::pin_mut;
 use futures_util::Stream;
@@ -171,10 +172,11 @@ fn blocks_stream<'a>(
 /// `config` The configuration containing required information used to connect to namada node
 /// to retrieve blocks from.
 pub async fn start_indexing(
+    client: HttpClient,
     db: Database,
-    config: &IndexerConfig,
     chain_name: &str,
     create_index: bool,
+    checksums: &Checksums,
 ) -> Result<(), Error> {
     info!("***** Starting indexer *****");
 
@@ -195,10 +197,6 @@ pub async fn start_indexing(
      *  Init RPC
      *
      ********************/
-
-    // Connect to a RPC
-    info!("Connecting to {}", config.tendermint_addr);
-    let mut client = HttpClient::new(config.tendermint_addr.as_str())?;
     info!("Getting last block");
     let latest_block = client.latest_block().await?;
     info!("Current block tip {}", &latest_block.block.header.height);
@@ -207,9 +205,9 @@ pub async fn start_indexing(
     let genesis_block: Genesis<Option<serde_json::Value>> = client.genesis().await?;
 
     if genesis_block.initial_height > current_height.into() {
-        warn!("RPC doesn't allow fetching previous block. Switching to a fallback node to sync pre-fork blocks.");
-        // switching to the pre-fork rpc Zondax provide
-        client = HttpClient::new("https://api.zondax.ch/nam/node/testnet")?;
+        warn!("RPC doesn't allow fetching previous block. Please restart with a pre-fork RPC to sync pre-fork blocks.");
+        // we must exit here because we can't use the same client for pre-fork and post-fork
+        process::exit(0);
     }
 
     /********************
@@ -230,7 +228,7 @@ pub async fn start_indexing(
     // Block consumer that stores block into the database
     while let Some(block) = rx.recv().await {
         // block is now the block info and the block results
-        if let Err(e) = db.save_block(&block.0, &block.1).await {
+        if let Err(e) = db.save_block(&block.0, &block.1, &checksums).await {
             // shutdown producer task
             shutdown.store(true, Ordering::Relaxed);
             tracing::error!("Closing block producer task due to an error saving last block: {e}");

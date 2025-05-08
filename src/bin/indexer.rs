@@ -1,8 +1,10 @@
 use namadexer::setup_logging;
 use namadexer::start_indexing;
+use namadexer::utils::fetch_checksums_from_node;
 use namadexer::Database;
 use namadexer::Error;
 
+use tendermint_rpc::HttpClient;
 use tracing::info;
 
 #[cfg(feature = "prometheus")]
@@ -80,11 +82,17 @@ async fn main() -> Result<(), Error> {
 
     setup_logging(&cfg);
 
+    // Init RPC client
+    info!("Connecting to {}", cfg.indexer_config().tendermint_addr);
+    let client = HttpClient::new(cfg.indexer_config().tendermint_addr.as_str())?;
+
+    // Fetch checksums from the node
+    let checksums = fetch_checksums_from_node(&client).await?;
     info!("Starting database connection");
 
     let db = Database::new(cfg.database_config(), cfg.chain_name.as_str()).await?;
     info!("Creating tables");
-    db.create_tables().await?;
+    db.create_tables(&checksums).await?;
 
     // start metrics service
     #[cfg(feature = "prometheus")]
@@ -94,10 +102,11 @@ async fn main() -> Result<(), Error> {
 
     info!("Starting indexer");
     start_indexing(
+        client,
         db,
-        cfg.indexer_config(),
         network.as_str(),
         cfg.database.create_index,
+        &checksums,
     )
     .await
 }

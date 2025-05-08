@@ -13,16 +13,17 @@ name = "indexer"
 path = "src/bin/indexer.rs"
 
 [dependencies]
-getrandom = { version = "0.2" }
-async-trait = "0.1.51"
-namada_core = { git = "https://github.com/anoma/namada", tag = "v0.44.1" }
-namada_sdk = { git = "https://github.com/anoma/namada", tag = "v0.44.1", default-features = false, features = ["std", "async-send", "download-params"] }
-namada_tx = { git = "https://github.com/anoma/namada", tag = "v0.44.1" }
-namada_governance = { git = "https://github.com/anoma/namada", tag = "v0.44.1" }
-namada_ibc = { git = "https://github.com/anoma/namada", tag = "v0.44.1" }
-namada_token = { git = "https://github.com/anoma/namada", tag = "v0.44.1" }
-namada_parameters = { git = "https://github.com/anoma/namada", tag = "v0.44.1" }
-namada_proof_of_stake = { git = "https://github.com/anoma/namada", tag = "v0.44.1" }
+getrandom = { version = "0.3" }
+async-trait = "0.1.86"
+bimap = { version = "0.6.3", features = ["serde"] }
+namada_core = { git = "https://github.com/anoma/namada", version = "0.149.1" }
+namada_sdk = { git = "https://github.com/anoma/namada", version = "0.149.1", default-features = false, features = ["std", "async-send", "download-params"] }
+namada_tx = { git = "https://github.com/anoma/namada", version = "0.149.1" }
+namada_governance = { git = "https://github.com/anoma/namada", version = "0.149.1" }
+namada_ibc = { git = "https://github.com/anoma/namada", version = "0.149.1" }
+namada_token = { git = "https://github.com/anoma/namada", version = "0.149.1" }
+namada_parameters = { git = "https://github.com/anoma/namada", version = "0.149.1" }
+namada_proof_of_stake = { git = "https://github.com/anoma/namada", version = "0.149.1" }
 rand = { version = "0.8", default-features = false }
 rand_core = { version = "0.6", default-features = false }
 tokio = { version = "1.26.0", features = ["rt-multi-thread"] }
@@ -68,10 +69,10 @@ metrics = "0.21.1"
 metrics-exporter-prometheus = { version = "0.12.1", optional = true }
 strum = "0.26.3"
 strum_macros = "0.26.3"
-tendermint = "0.38.0"
-tendermint-config = "0.38.0"
-tendermint-rpc = { version = "0.38.0", features = ["http-client"] }
-tendermint-proto = "0.38.0"
+tendermint = "0.40.3"
+tendermint-config = "0.40.3"
+tendermint-rpc = { version = "0.40.3", features = ["http-client"] }
+tendermint-proto = "0.40.3"
 clap = { version = "4.4.2", features = ["derive", "env"] }
 ureq = "2.9.1"
 once_cell = "1.19.0"
