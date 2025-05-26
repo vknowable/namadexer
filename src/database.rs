@@ -595,8 +595,28 @@ impl Database {
 
                 let code_hex = hex::encode(code.as_slice());
                 let unknown_type = "unknown".to_string();
-                let type_tx = checksums.get_name_by_id(&code_hex).unwrap_or(unknown_type);
-                println!("type_tx: {:?}", type_tx);
+                let type_tx = match checksums.get_name_by_id(&code_hex) {
+                    Some(tx_type) => tx_type,
+                    None => {
+                        // Try refreshing checksums from node
+                        info!("Transaction type not found in current checksums, attempting to refresh from node");
+                        if let Ok(client) = crate::indexer::utils::get_rpc_client().await {
+                            if let Ok(refreshed_checksums) = crate::utils::fetch_checksums_from_node(&client).await {
+                                info!("Successfully refreshed checksums from node");
+                                refreshed_checksums.get_name_by_id(&code_hex).unwrap_or_else(|| {
+                                    info!("Transaction type still not found after refreshing checksums");
+                                    unknown_type
+                                })
+                            } else {
+                                info!("Failed to fetch checksums from node");
+                                unknown_type
+                            }
+                        } else {
+                            info!("Failed to get RPC client for refreshing checksums");
+                            unknown_type
+                        }
+                    }
+                };
 
                 let inner_hash = compute_inner_tx_hash(Some(&wrapper_tx.header_hash()), Either::Right(&inner_tx)).to_vec();
                 let inner_hash_str = Id::Hash(hex::encode(&inner_hash).to_lowercase());
