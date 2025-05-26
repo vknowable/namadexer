@@ -4,7 +4,7 @@ protoc/*
 *.zip.*
 *.zip
 /monitoring/grafana/data
-checksums.*
+checksums.old
 .idea
 config/Settings.toml
 MakePG
