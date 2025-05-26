@@ -2,6 +2,8 @@ use crate::database::Database;
 use crate::error::Error;
 use sqlx::Row as TRow;
 use tracing::instrument;
+use crate::config::Settings;
+use tendermint_rpc::HttpClient;
 
 #[instrument(name = "Utils::get_start_height", skip(db))]
 pub async fn get_start_height(db: &Database) -> Result<u32, Error> {
@@ -25,4 +27,9 @@ pub async fn has_indexes(db: &Database) -> Result<bool, Error> {
     }
 
     Ok(has_indexes)
+}
+
+pub async fn get_rpc_client() -> Result<HttpClient, Error> {
+    let cfg = Settings::new()?;
+    Ok(HttpClient::new(cfg.indexer_config().tendermint_addr.as_str())?)
 }
